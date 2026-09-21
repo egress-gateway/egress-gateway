@@ -2,5 +2,5 @@
 source "$(dirname "$0")/common.sh"
 require kind docker
 verify_owner
-kind delete cluster --name "$cluster"
+kind delete cluster --name "$cluster" --kubeconfig "$kubeconfig"
 rm -f "$state_dir/node-id" "$kubeconfig"
