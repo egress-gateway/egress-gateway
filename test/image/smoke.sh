@@ -18,7 +18,9 @@ trap cleanup EXIT
 "${compose[@]}" up --build --detach --wait --wait-timeout 90
 request() {
   path=$1 expected_status=$2 expected_body=$3
+  # Compose does not wait for the fixture upstream to accept connections.
   actual_status="$(curl --noproxy '*' --silent --show-error --max-time 10 \
+    --retry 10 --retry-delay 1 --retry-max-time 20 --retry-connrefused \
     -o "$response" -w '%{http_code}' "http://127.0.0.1:$port$path")"
   [[ "$actual_status" == "$expected_status" ]]
   [[ "$(cat "$response")" == "$expected_body" ]]
