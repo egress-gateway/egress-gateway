@@ -69,6 +69,11 @@ preparation. The curl application sees only its final read-only trust bundle.
 The egress deployment uses the same gateway image. A sidecar-free controlled origin
 receives HTTP after the two proxies.
 
+A gateway-only EnvoyFilter preserves the supplied request UUID for correlation;
+this fixture logging choice is not an authorization or trusted-identity input.
+The workload has no inject-disabled annotation: the namespace disables automatic
+injection while the declared sidecar status lets Istio CNI capture its traffic.
+
 The connectivity fixture has no OPA authorization filter. This is mesh test
 configuration, not a product authorization bypass switch. HTTP body authorization
 remains in component/image smoke coverage. Each HTTP scenario requires correlated

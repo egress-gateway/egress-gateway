@@ -40,7 +40,7 @@ verify_owner() {
   [[ "$actual" == "$expected" ]] || { echo 'node identity mismatch; refusing operation' >&2; exit 2; }
   if [[ "$phase" != cluster-down && -f "$kubeconfig" ]]; then
     expected_server="$(kind get kubeconfig --name "$cluster" | kubectl config view --kubeconfig /dev/stdin -o jsonpath='{.clusters[0].cluster.server}')"
-    actual_server="$(kubectl config view --kubeconfig "$kubeconfig" -o jsonpath='{.clusters[0].cluster.server}')"
+    actual_server="$(kubectl config view --kubeconfig "$kubeconfig" --context "kind-$cluster" --minify -o jsonpath='{.clusters[0].cluster.server}')"
     [[ "$actual_server" == "$expected_server" ]] || { echo 'kubeconfig endpoint mismatch' >&2; exit 2; }
   fi
 }

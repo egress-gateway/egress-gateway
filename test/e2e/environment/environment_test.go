@@ -63,3 +63,23 @@ func TestReuseDoesNotDelete(t *testing.T) {
 		t.Fatalf("retained behavior: %v %v", got, err)
 	}
 }
+
+func TestExistingReceiptNeverAcquiresOwnership(t *testing.T) {
+	root := t.TempDir()
+	e := New(Config{StateDir: root, Artifacts: filepath.Join(root, "artifacts")})
+	receipt := filepath.Join(root, "node-id")
+	if err := os.WriteFile(receipt, []byte("existing-node"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.operation = func(context.Context, string) error { t.Fatal("touched existing node"); return nil }
+	if err := e.Up(t.Context()); err == nil {
+		t.Fatal("accepted existing receipt")
+	}
+	raw, err := os.ReadFile(receipt)
+	if err != nil || string(raw) != "existing-node" {
+		t.Fatalf("receipt changed: %q %v", raw, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "environment.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("claimed existing environment")
+	}
+}

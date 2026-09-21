@@ -9,4 +9,4 @@ meshConfig:
   accessLogFile: /dev/stdout
   accessLogEncoding: JSON
   accessLogFormat: |
-    {"request_id":"%REQ(X-REQUEST-ID)%","path":"%REQ(:PATH)%","code":%RESPONSE_CODE%,"downstream_peer":"%DOWNSTREAM_PEER_URI_SAN%","upstream_peer":"%UPSTREAM_PEER_URI_SAN%","downstream_tls":"%DOWNSTREAM_TLS_VERSION%","upstream_tls":"%UPSTREAM_TLS_VERSION%"}
+    {"request_id":"%REQ(X-REQUEST-ID)%","path":"%REQ(:PATH)%","code":"%RESPONSE_CODE%","downstream_peer":"%DOWNSTREAM_PEER_URI_SAN%","upstream_peer":"%UPSTREAM_PEER_URI_SAN%","downstream_tls":"%DOWNSTREAM_TLS_VERSION%","upstream_tls":"%UPSTREAM_TLS_VERSION%"}

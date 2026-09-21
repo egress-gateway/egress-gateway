@@ -145,6 +145,12 @@ items:
             name: public
           - mountPath: /etc/istio/proxy
             name: istio-data
+          - mountPath: /var/run/secrets/workload-spiffe-uds
+            name: workload-socket
+          - mountPath: /var/run/secrets/credential-uds
+            name: credential-socket
+          - mountPath: /var/run/secrets/workload-spiffe-credentials
+            name: workload-certs
           - mountPath: /var/run/secrets/tokens
             name: istio-token
             readOnly: true
@@ -155,8 +161,9 @@ items:
         - command:
           - /bin/bash
           - -ec
-          - chown 1337:1337 /state /runtime /public /bundle /istio; chmod 0700 /state
-            /runtime; chmod 0755 /public /bundle /istio
+          - chown 1337:1337 /state /runtime /public /bundle /istio /workload-socket
+            /credential-socket /workload-certs; chmod 0700 /state /runtime /workload-socket
+            /credential-socket /workload-certs; chmod 0755 /public /bundle /istio
           image: ${GATEWAY_TEST_IMAGE}
           imagePullPolicy: Never
           name: prepare-volumes
@@ -173,6 +180,12 @@ items:
             name: bundle
           - mountPath: /istio
             name: istio-data
+          - mountPath: /workload-socket
+            name: workload-socket
+          - mountPath: /credential-socket
+            name: credential-socket
+          - mountPath: /workload-certs
+            name: workload-certs
         serviceAccountName: egress
         terminationGracePeriodSeconds: 20
         volumes:
@@ -186,6 +199,12 @@ items:
           name: bundle
         - emptyDir: {}
           name: istio-data
+        - emptyDir: {}
+          name: workload-socket
+        - emptyDir: {}
+          name: credential-socket
+        - emptyDir: {}
+          name: workload-certs
         - configMap:
             name: istio-ca-root-cert
           name: istio-ca
@@ -212,7 +231,6 @@ items:
   kind: Pod
   metadata:
     annotations:
-      sidecar.istio.io/inject: "false"
       sidecar.istio.io/status: '{"initContainers": ["istio-proxy"], "containers":
         ["istio-proxy"], "volumes": [], "imagePullSecrets": [], "revision": "default"}'
       traffic.sidecar.istio.io/includeInboundPorts: ""
@@ -241,8 +259,9 @@ items:
     - command:
       - /bin/bash
       - -ec
-      - chown 1337:1337 /state /runtime /public /bundle /istio; chmod 0700 /state
-        /runtime; chmod 0755 /public /bundle /istio
+      - chown 1337:1337 /state /runtime /public /bundle /istio /workload-socket /credential-socket
+        /workload-certs; chmod 0700 /state /runtime /workload-socket /credential-socket
+        /workload-certs; chmod 0755 /public /bundle /istio
       image: ${GATEWAY_TEST_IMAGE}
       imagePullPolicy: Never
       name: prepare-volumes
@@ -259,6 +278,12 @@ items:
         name: bundle
       - mountPath: /istio
         name: istio-data
+      - mountPath: /workload-socket
+        name: workload-socket
+      - mountPath: /credential-socket
+        name: credential-socket
+      - mountPath: /workload-certs
+        name: workload-certs
     - env:
       - name: GATEWAY_ROLE
         value: workload
@@ -334,6 +359,12 @@ items:
         name: public
       - mountPath: /etc/istio/proxy
         name: istio-data
+      - mountPath: /var/run/secrets/workload-spiffe-uds
+        name: workload-socket
+      - mountPath: /var/run/secrets/credential-uds
+        name: credential-socket
+      - mountPath: /var/run/secrets/workload-spiffe-credentials
+        name: workload-certs
       - mountPath: /var/run/secrets/tokens
         name: istio-token
         readOnly: true
@@ -384,6 +415,12 @@ items:
       name: bundle
     - emptyDir: {}
       name: istio-data
+    - emptyDir: {}
+      name: workload-socket
+    - emptyDir: {}
+      name: credential-socket
+    - emptyDir: {}
+      name: workload-certs
     - configMap:
         name: istio-ca-root-cert
       name: istio-ca
@@ -454,4 +491,27 @@ items:
           host: origin.gateway-origin.svc.cluster.local
           port:
             number: 80
+- apiVersion: networking.istio.io/v1alpha3
+  kind: EnvoyFilter
+  metadata:
+    name: trace-request-id
+    namespace: gateway-test
+  spec:
+    configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            preserve_external_request_id: true
+    workloadSelector:
+      labels:
+        app: egress
 kind: List

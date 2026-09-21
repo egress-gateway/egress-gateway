@@ -58,6 +58,9 @@ func (e *Environment) Up(ctx context.Context) (err error) {
 	if _, err := os.Stat(filepath.Join(e.Config.StateDir, "environment.json")); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("environment already retained; use test or down")
 	}
+	if _, receiptErr := os.Stat(filepath.Join(e.Config.StateDir, "node-id")); !errors.Is(receiptErr, os.ErrNotExist) {
+		return errors.New("existing node ownership receipt; refusing setup takeover")
+	}
 	raw, err := json.MarshalIndent(e.Config, "", "  ")
 	if err != nil {
 		return err
