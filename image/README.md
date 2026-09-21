@@ -1,9 +1,15 @@
-# Image
+# Gateway image
 
-The Dockerfile builds this repository's `gateway-opa` and copies it into a pinned Istio proxyv2 image. OPA plugins and future Go dependencies on the policy library are compiled into the binary. Envoy and pilot-agent retain their upstream implementations.
+The image contains one `gateway-daemon`, Envoy and pilot-agent. Role and mode select
+startup behavior; see [the public configuration contract](../docs/configuration.md).
+OPA runs inside the daemon. The shell entrypoint only `exec`s it, and the health
+command delegates to `gateway-daemon ready`.
 
-The final image does not start a separate stock OPA process. It runs as UID/GID 1337 by default and listens on unprivileged ports. Deployment integration owns transparent Pod traffic interception and the permissions it requires.
+UID 1337 owns the private state/runtime directories. Deployments mounting volumes
+must provide the documented ownership and permissions. Public trust is a separate
+mount. The image contains no generated CA or other user secrets.
 
-`entrypoint.sh` manages startup, failure propagation, and shutdown of the OPA and proxy child processes. `healthcheck.sh` aggregates component health. Kubernetes deployments must configure corresponding probes explicitly; Kubernetes does not automatically execute Dockerfile HEALTHCHECK instructions.
-
-`make image` builds locally; `make smoke` validates the actual image. The image contains no local test policies. Compose supplies separate fixture policies for each role through read-only mounts.
+`make smoke` builds and runs both roles in a dedicated Compose project. It checks
+HTTP authorization and process/private-interface/CA behavior. It does not establish
+HTTPS inspection, live Istio compatibility, or network isolation. The default
+Istio mode retains upstream environment and volume prerequisites.

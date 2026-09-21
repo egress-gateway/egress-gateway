@@ -6,7 +6,7 @@ Use Go 1.26+ and Docker Compose v2. Run `make check` to validate Go code, and `m
 
 | Command | Purpose |
 |---|---|
-| `make build` | Build `bin/gateway-opa` |
+| `make build` | Build `bin/gateway-daemon` and the development OPA test utility |
 | `make fmt` | Format Go files |
 | `make check` | Check formatting, run vet and race detection, and test a real OPA process |
 | `make image` | Build `egress-gateway:dev` |
@@ -18,6 +18,6 @@ OPA extensions live under `internal/` and are explicitly registered in `internal
 
 New plugins require a concrete use case and behavioral tests. Use the OPA Factory / Plugin lifecycle and reuse its Bundle / Discovery / Status capabilities where possible. Do not add interfaces or tests without behavior merely to fill placeholder directories.
 
-When updating upstream dependencies, check the OPA / OPA-Envoy versions in `go.mod` together with the Go / Istio image versions in the Dockerfile, and rerun affected validation. A personal `go.work` may be used for cross-repository development; do not commit local `replace` directives.
+When updating upstream dependencies, check the OPA / OPA-Envoy versions in `go.mod` together with the Go / Istio image versions in the Dockerfile, and rerun affected validation. Keep the public configuration contract in this existing module; do not add SDK modules, `go.work`, or local `replace` directives.
 
 The project license has not yet been selected. This scaffold leaves that decision to the owner.

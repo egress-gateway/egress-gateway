@@ -1,35 +1,37 @@
-# Architecture and responsibilities
+# Runtime ownership
 
-A single Go module builds the custom OPA executable, `gateway-opa`, and registers the Envoy authorization plugin through official OPA interfaces. The scaffold maintains no OPA fork and introduces no dynamic `.so` plugin mechanism.
+`gateway-daemon` embeds the upstream OPA runtime and official Envoy plugin in its
+Go process. Standalone mode supervises Envoy; Istio mode supervises pilot-agent,
+which owns Envoy. The daemon does not publish mesh discovery resources or issue
+Istio identities. The same image serves workload and egress roles.
 
-```mermaid
-flowchart LR
-  subgraph image[Gateway container]
-    entry[Entrypoint] --> agent[Istio agent]
-    agent --> envoy[Envoy]
-    entry --> opa[gateway-opa]
-    envoy -->|Local ext_authz gRPC| opa
-  end
-  istiod[Istiod] -.Configuration and identity.-> agent
-  controller[Controller / policy synchronization channel] -.Runtime configuration and policies.-> opa
-  client[Request] --> envoy
-  envoy --> next[Next hop]
-```
+Initialization validates the public config, locks private runtime state, prepares
+the workload inspection CA, and starts OPA. After its plugins and authorization
+socket are ready, it starts the proxy. Readiness requires public trust for workload,
+OPA health and the selected proxy's readiness. An unexpected proxy exit or lost
+required service terminates the runtime; no daemon restart loop is introduced.
+SIGTERM/SIGINT stop the proxy process group and cancel embedded OPA. Process-group
+shutdown has a five-second bound before forced termination. Linux also requests
+termination of the direct child if its parent exits unexpectedly.
 
-In the default `istio` mode, `pilot-agent` starts Envoy using the upstream bootstrap and identity mechanisms. Local `standalone` mode starts the image's Envoy directly with mounted static configuration; it provides neither mesh identity nor Pod egress interception.
+The authorization socket and OPA management socket are private filesystem sockets.
+Standalone Envoy's admin socket uses the same private directory. The trusted
+configuration producer still owns listener and route contents; arbitrary mounted
+configuration is not treated as untrusted workload input. Istio management
+isolation is not yet verified; see the explicit partial-delivery boundary in
+[configuration](configuration.md).
 
-The OPA and proxy child processes form one runtime unit. If either long-running child exits, the entrypoint stops the other and exits with a nonzero status. When the container receives TERM or INT, it sends TERM to both children and waits for them to exit. The container platform remains responsible for forced termination after its timeout.
-
-| Owner | Responsibilities |
+| Owner | Responsibility |
 |---|---|
-| gateway | OPA plugin assembly, protocol and identity adaptation, enforcement results, image |
-| policy | Public semantic types, baseline Rego, shared test fixtures |
-| controller | CR watches, bindings, policy generation and publication, target configuration, status aggregation |
-| Istio | Identity, certificates, routing, and proxy configuration |
-| External workload manager | Creation, replacement, and deletion of application Pods |
+| gateway | Public runtime config, daemon/image, inspection trust, data-plane adapters, component and minimal connectivity tests |
+| policy | Future shared policy semantics and baseline fixtures |
+| networking | Shared installation, workload enrollment and network mechanics |
+| controller | CRDs, binding, admission, publication and desired-state status |
+| Istio | Mesh discovery, workload identity, mTLS and Envoy ownership under pilot-agent |
+| workload manager | Pod creation and its volume lifetime |
 
-Workload Proxy and Egress Gateway use the same image. The full contract requires the former to enforce the baseline and the latter to independently recheck it using trusted source identity before enforcing egress policy. This scaffold only verifies that both authorization stages are connected and can deny independently. Shared policy composition and ServiceAccount binding are not yet implemented.
-
-The synchronization mechanism, such as native bundle long polling or OPAL, has not been selected; the scaffold deploys no synchronization control plane. Upstream OPA management capabilities remain available. Component tests update fixture policies over REST only to verify that runtime decisions change; this does not select REST push as the production synchronization mechanism.
-
-References: [Controller Scope](https://github.com/egress-gateway/egress-gateway-controller/wiki/Controller-Scope-and-Contract), [CRD Design](https://github.com/egress-gateway/egress-gateway-controller/wiki/GatewayProfile-CRD-Design).
+The HTTP fixture uses two independent OPA checks with bounded complete-body
+buffering. These test-only policies do not define shared policy semantics. No
+application-supplied identity is promoted into a verified principal. The real
+Istio principal adapter and HTTPS enforcement remain incomplete; do not infer
+those guarantees from the HTTP fixture or prepared CA files.

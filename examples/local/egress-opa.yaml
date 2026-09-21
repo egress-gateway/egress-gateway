@@ -1,0 +1,3 @@
+plugins:
+  envoy_ext_authz_grpc:
+    path: fixture/egress/decision

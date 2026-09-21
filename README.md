@@ -2,7 +2,7 @@
 
 A data plane runtime that packages Envoy, the Istio agent, and an extensible OPA into one image, configured to run as either a Workload Proxy or an Egress Gateway.
 
-This repository is a buildable scaffold with a runnable local example. It provides a custom OPA entry point, the official Envoy authorization plugin, startup for both roles, component tests, and CI. The full GatewayProfile contract, ServiceAccount identity binding, and dynamic policy delivery are not yet implemented.
+This work-in-progress foundation embeds the official OPA runtime and Envoy plugin in `gateway-daemon`, supervises the selected proxy process, and prepares Pod-lifetime inspection trust. The standalone example validates HTTP authorization. HTTPS inspection is blocked by the [current certificate capability gap](docs/https-capability.md); this candidate does not complete V01-01. The full GatewayProfile contract, ServiceAccount identity binding, and dynamic policy delivery are not yet implemented.
 
 ## Getting started
 
@@ -30,7 +30,9 @@ The request path is `Client → Workload Envoy/OPA → Egress Envoy/OPA → Test
 ## Repository layout
 
 ```text
-cmd/gateway-opa/        Custom OPA executable entry point
+cmd/gateway-daemon/     Embedded OPA and proxy supervision
+config/                Public startup and volume contract
+cmd/gateway-opa/        Development-only OPA integration-test utility
 internal/opa/           Registration of upstream and future project plugins
 internal/plugins/       Extension boundary for future project plugins
 internal/request/       Request adaptation boundary
@@ -62,4 +64,4 @@ That library has no usable version yet, so this scaffold adds no placeholder `re
 - [Component versions and validation scope](docs/compatibility.md)
 - [Contributing](CONTRIBUTING.md)
 
-The full Kubernetes / Istio development environment, Pod injection, and end-to-end acceptance tests belong in [`egress-gateway-controller`](https://github.com/egress-gateway/egress-gateway-controller). Local image tests in this repository are not cluster E2E tests.
+The gateway repository owns its minimal kind/Istio connectivity fixture. Shared network installation and enrollment belong in networking; admission belongs in controller. Local image tests do not establish real mesh identity or network fail-closed behavior.
