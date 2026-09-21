@@ -3,3 +3,5 @@
 /go.work
 /go.work.sum
 .DS_Store
+
+/.e2e/

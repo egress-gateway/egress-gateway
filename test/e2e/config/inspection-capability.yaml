@@ -1,0 +1,48 @@
+static_resources:
+  listeners:
+  - name: inspection
+    address:
+      socket_address: {address: 127.0.0.1, port_value: 8443}
+    filter_chains:
+    - transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          disable_stateless_session_resumption: true
+          disable_stateful_session_resumption: true
+
+          common_tls_context:
+            custom_tls_certificate_selector:
+              name: envoy.tls.certificate_selectors.on_demand_secret
+              typed_config:
+                '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_selectors.on_demand_secret.v3.Config
+                config_source:
+                  resource_api_version: V3
+                  api_config_source:
+                    api_type: DELTA_GRPC
+                    transport_api_version: V3
+                    grpc_services:
+                    - envoy_grpc: {cluster_name: inspection_sds}
+                certificate_mapper:
+                  name: envoy.tls.certificate_mappers.sni
+                  typed_config:
+                    '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_mappers.sni.v3.SNI
+                    default_value: no-sni.invalid
+
+      filters:
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: inspection
+          cluster: inspection_sds
+  clusters:
+  - name: inspection_sds
+    connect_timeout: 1s
+    type: STATIC
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: inspection_sds
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address: {pipe: {path: /tmp/inspection-sds.sock}}

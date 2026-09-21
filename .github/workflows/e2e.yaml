@@ -1,0 +1,46 @@
+name: Gateway kind connectivity
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: true
+      - name: Install pinned fixture tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          source test/e2e/config/versions.env
+          mkdir -p "$RUNNER_TEMP/gateway-tools"
+          cd "$RUNNER_TEMP/gateway-tools"
+          curl -fsSLO "https://kind.sigs.k8s.io/dl/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLO "https://kind.sigs.k8s.io/dl/$KIND_VERSION/kind-linux-amd64.sha256sum"
+          sha256sum -c kind-linux-amd64.sha256sum
+          mv kind-linux-amd64 kind
+          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+          curl -fsSLo kubectl.sha256 "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
+          curl -fsSLO "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLO "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz.sha256sum"
+          sha256sum -c "helm-$HELM_VERSION-linux-amd64.tar.gz.sha256sum"
+          tar -xzf "helm-$HELM_VERSION-linux-amd64.tar.gz"
+          mv linux-amd64/helm helm
+          chmod +x kind kubectl helm
+          echo "$RUNNER_TEMP/gateway-tools" >> "$GITHUB_PATH"
+      - name: Run the same full lifecycle as local
+        run: make e2e E2E_CLUSTER=gateway-e2e-ci E2E_IMAGE=egress-gateway:e2e-ci
+      - name: Preserve public diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gateway-e2e-public-diagnostics
+          path: .e2e/artifacts
+          if-no-files-found: warn
