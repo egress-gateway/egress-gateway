@@ -7,6 +7,7 @@ project="gateway-smoke-$$"
 compose=(docker compose -p "$project" -f examples/local/compose.yaml)
 port="${GATEWAY_PORT:-18080}"
 response="$(mktemp)"
+# cleanup captures diagnostics on failure and removes test resources.
 cleanup() {
   result=$?
   if [[ "$result" != 0 ]]; then "${compose[@]}" logs --no-color >&2 || true; fi
@@ -16,6 +17,7 @@ cleanup() {
 trap cleanup EXIT
 
 "${compose[@]}" up --build --detach --wait --wait-timeout 90
+# request retries a gateway request and verifies its status and body.
 request() {
   path=$1 expected_status=$2 expected_body=$3
   # Compose does not wait for the fixture upstream to accept connections.

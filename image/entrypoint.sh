@@ -18,6 +18,7 @@ case "$mode" in
 esac
 
 children=()
+# cleanup terminates and reaps every runtime child process.
 # shellcheck disable=SC2329 # Invoked by the EXIT trap, including signal exits.
 cleanup() {
   trap '' TERM INT

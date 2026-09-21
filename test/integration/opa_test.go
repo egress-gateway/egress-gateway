@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestAuthorizationAndPolicyUpdate verifies allow, deny, and policy reload behavior.
 func TestAuthorizationAndPolicyUpdate(t *testing.T) {
 	api, client := startOPA(t)
 	check := func(path string, wantAllowed bool) {
@@ -59,6 +60,7 @@ allow if { input.attributes.request.http.path == "/allowed" }
 	check("/allowed", false)
 }
 
+// TestMissingPolicyDoesNotAllow verifies that an absent policy fails closed.
 func TestMissingPolicyDoesNotAllow(t *testing.T) {
 	_, client := startOPA(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -79,6 +81,7 @@ func TestMissingPolicyDoesNotAllow(t *testing.T) {
 	}
 }
 
+// startOPA starts an isolated gateway OPA process and waits for it to become healthy.
 func startOPA(t *testing.T) (string, authv3.AuthorizationClient) {
 	t.Helper()
 	binary := os.Getenv("GATEWAY_OPA_BIN")
@@ -157,6 +160,7 @@ func startOPA(t *testing.T) (string, authv3.AuthorizationClient) {
 	return api, authv3.NewAuthorizationClient(connection)
 }
 
+// putPolicy uploads a fixture policy to the OPA management API.
 func putPolicy(t *testing.T, api, source string) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, api+"/v1/policies/fixture", strings.NewReader(source))

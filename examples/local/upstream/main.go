@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// main serves the fixture response used by the local gateway example.
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
