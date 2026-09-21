@@ -110,7 +110,17 @@ func Open(privateDir, publicDir string, now time.Time) (_ *Authority, err error)
 	if !ok {
 		return nil, errors.New("unsupported inspection CA key")
 	}
-	if err = WriteAtomic(filepath.Join(publicDir, config.CACertificateFile), s.Certificate, 0o644); err != nil {
+	publishedPath := filepath.Join(publicDir, config.CACertificateFile)
+	published, readErr := os.ReadFile(publishedPath)
+	if readErr == nil {
+		block, rest := pem.Decode(published)
+		if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(rest)) != 0 || !bytes.Equal(block.Bytes, cert.Raw) {
+			return nil, errors.New("published inspection CA does not match private state; refusing replacement")
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return nil, readErr
+	}
+	if err = WriteAtomic(publishedPath, s.Certificate, 0o644); err != nil {
 		return nil, err
 	}
 	return &Authority{Certificate: cert, key: key, lock: lock}, nil

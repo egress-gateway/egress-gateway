@@ -121,3 +121,59 @@ func TestBundle(t *testing.T) {
 		}
 	}
 }
+
+func TestPublishedTrustMustMatchPrivateState(t *testing.T) {
+	privateA, publicA := dirs(t)
+	privateB, publicB := dirs(t)
+	now := time.Now()
+	for _, pair := range [][2]string{{privateA, publicA}, {privateB, publicB}} {
+		ca, err := Open(pair[0], pair[1], now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ca.Close()
+	}
+	path := filepath.Join(publicA, config.CACertificateFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(privateB, publicA, now); err == nil {
+		t.Fatal("mismatched public trust accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("public trust changed on mismatch")
+	}
+	if err := os.WriteFile(path, []byte("corrupt public trust"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(privateA, publicA, now); err == nil {
+		t.Fatal("malformed published trust accepted")
+	}
+	after, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "corrupt public trust" {
+		t.Fatal("corrupt trust silently repaired")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := Open(privateA, publicA, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca.Close()
+	after, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("missing public file recovery changed CA")
+	}
+}
