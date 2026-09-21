@@ -1,0 +1,7 @@
+labels:
+  gateway_role: workload
+plugins:
+  envoy_ext_authz_grpc:
+    addr: 127.0.0.1:9191
+    path: envoy/authz/allow
+    dry-run: false
