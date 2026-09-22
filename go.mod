@@ -6,7 +6,9 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0
 	github.com/open-policy-agent/opa v1.20.2
 	github.com/open-policy-agent/opa-envoy-plugin v1.20.2-envoy
+	golang.org/x/sys v0.47.0
 	google.golang.org/grpc v1.83.2
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -106,7 +108,6 @@ require (
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -116,5 +117,4 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
