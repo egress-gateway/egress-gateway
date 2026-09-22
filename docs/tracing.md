@@ -109,9 +109,10 @@ public configuration protocol is introduced.
   measurements, not production performance guarantees or exact wire-byte counts.
 
 `make e2e` uses real Istiod, CNI and the same gateway image for both roles. HTTP
-and inspected HTTPS must reach the Collector with linked proxy spans while all
-existing identity/TLS assertions continue to pass. OPA authorization spans remain
-component assertions; the minimal kind fixture has no authorization filters.
+and inspected HTTPS requests carry no trace context: the workload proxy creates
+the root span and trace ID, and the Collector must receive egress spans linked
+to that root. Existing identity/TLS assertions continue to pass. OPA authorization
+spans remain component assertions; the minimal kind fixture has no authorization filters.
 The Collector uses an upstream image pinned by version and digest. Its structured
 OTLP file output is acceptance evidence, not daemon logs or configuration parsing.
 
