@@ -15,3 +15,12 @@ for ns in istio-system gateway-test gateway-origin; do
     done
   done
 done
+# These admin endpoints contain counters and listener addresses, never SDS material.
+for proxy in workload deployment/egress; do
+  name="${proxy//\//-}"
+  for endpoint in 'stats?filter=on_demand_secret%7Cinspection_sds%7Cssl%7Coverload%7Cmemory%7Clistener_manager' 'listeners?format=json'; do
+    kind="${endpoint%%\?*}"
+    k exec -n gateway-test "$proxy" -c istio-proxy -- pilot-agent request GET "$endpoint" \
+      > "$artifacts/$name-$kind.txt" 2>&1 || true
+  done
+done
