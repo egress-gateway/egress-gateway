@@ -28,7 +28,8 @@ image:
 	docker build -f image/Dockerfile -t $(IMAGE) .
 
 smoke:
-	bash test/image/smoke.sh
+	GATEWAY_IMAGE=$(IMAGE) bash test/image/smoke.sh
+	GATEWAY_IMAGE=$(IMAGE) $(GO) test -tags=image -count=1 -timeout=5m -v ./test/image/https
 
 clean:
 	rm -f bin/gateway-opa bin/gateway-daemon coverage.out

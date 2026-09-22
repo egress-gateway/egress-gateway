@@ -22,35 +22,38 @@ const (
 )
 
 const (
-	EnvRole           = "GATEWAY_ROLE"
-	EnvProxyMode      = "GATEWAY_PROXY_MODE"
-	EnvOPAConfig      = "OPA_CONFIG"
-	EnvEnvoyConfig    = "ENVOY_CONFIG"
-	EnvStateDir       = "GATEWAY_STATE_DIR"
-	EnvPublicDir      = "GATEWAY_PUBLIC_DIR"
-	EnvRuntimeDir     = "GATEWAY_RUNTIME_DIR"
-	DefaultStateDir   = "/var/lib/gateway/private"
-	DefaultPublicDir  = "/run/gateway/trust"
-	DefaultRuntimeDir = "/run/gateway/private"
-	CACertificateFile = "inspection-ca.pem"
-	CAStateFile       = "inspection-ca.json"
-	BundleFile        = "ca-bundle.pem"
+	EnvIdentityProvider = "GATEWAY_IDENTITY_PROVIDER"
+	EnvRole             = "GATEWAY_ROLE"
+	EnvProxyMode        = "GATEWAY_PROXY_MODE"
+	EnvOPAConfig        = "OPA_CONFIG"
+	EnvEnvoyConfig      = "ENVOY_CONFIG"
+	EnvStateDir         = "GATEWAY_STATE_DIR"
+	EnvPublicDir        = "GATEWAY_PUBLIC_DIR"
+	EnvRuntimeDir       = "GATEWAY_RUNTIME_DIR"
+	DefaultStateDir     = "/var/lib/gateway/private"
+	DefaultPublicDir    = "/run/gateway/trust"
+	DefaultRuntimeDir   = "/run/gateway/private"
+	CACertificateFile   = "inspection-ca.pem"
+	CAStateFile         = "inspection-ca.json"
+	BundleFile          = "ca-bundle.pem"
+	InspectionSDSFile   = "inspection-sds.sock"
 )
 
 // Config is resolved once at startup. Private and public directories must be
 // separate mounts; only PublicDir may be mounted into an application.
 type Config struct {
-	Role        Role
-	ProxyMode   ProxyMode
-	OPAConfig   string
-	EnvoyConfig string
-	StateDir    string
-	PublicDir   string
-	RuntimeDir  string
+	IdentityProvider string
+	Role             Role
+	ProxyMode        ProxyMode
+	OPAConfig        string
+	EnvoyConfig      string
+	StateDir         string
+	PublicDir        string
+	RuntimeDir       string
 }
 
 func Defaults() Config {
-	return Config{Role: Workload, ProxyMode: Istio,
+	return Config{IdentityProvider: "istio-mtls", Role: Workload, ProxyMode: Istio,
 		OPAConfig: "/etc/gateway/opa/workload.yaml", StateDir: DefaultStateDir,
 		PublicDir: DefaultPublicDir, RuntimeDir: DefaultRuntimeDir}
 }
@@ -74,6 +77,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		target   *string
 		fallback string
 	}{
+		{EnvIdentityProvider, &c.IdentityProvider, c.IdentityProvider},
 		{EnvOPAConfig, &c.OPAConfig, "/etc/gateway/opa/" + role + ".yaml"},
 		{EnvEnvoyConfig, &c.EnvoyConfig, ""}, {EnvStateDir, &c.StateDir, c.StateDir},
 		{EnvPublicDir, &c.PublicDir, c.PublicDir}, {EnvRuntimeDir, &c.RuntimeDir, c.RuntimeDir},
@@ -97,6 +101,9 @@ func value(lookup func(string) (string, bool), name, fallback string) (string, e
 }
 
 func (c Config) Validate() error {
+	if c.IdentityProvider != "istio-mtls" {
+		return fmt.Errorf("unsupported %s: %q", EnvIdentityProvider, c.IdentityProvider)
+	}
 	if c.Role != Workload && c.Role != Egress {
 		return fmt.Errorf("unsupported %s: %q", EnvRole, c.Role)
 	}
@@ -131,6 +138,9 @@ func contains(parent, child string) bool {
 	rel, err := filepath.Rel(parent, child)
 	return err == nil && filepath.IsLocal(rel)
 }
-func (c Config) PublicCAPath() string   { return filepath.Join(c.PublicDir, CACertificateFile) }
-func (c Config) OPAAddress() string     { return "unix://" + filepath.Join(c.RuntimeDir, "opa.sock") }
-func (c Config) EnvoyAdminPath() string { return filepath.Join(c.RuntimeDir, "envoy-admin.sock") }
+func (c Config) PublicCAPath() string      { return filepath.Join(c.PublicDir, CACertificateFile) }
+func (c Config) OPAAddress() string        { return "unix://" + filepath.Join(c.RuntimeDir, "opa.sock") }
+func (c Config) EnvoyAdminPath() string    { return filepath.Join(c.RuntimeDir, "envoy-admin.sock") }
+func (c Config) InspectionSDSPath() string { return filepath.Join(c.RuntimeDir, InspectionSDSFile) }
+
+func (c Config) RequestGuardPath() string { return filepath.Join(c.RuntimeDir, "https-guard.lua") }

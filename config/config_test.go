@@ -34,7 +34,8 @@ func TestPublicContract(t *testing.T) {
 }
 func TestRejectInvalidContract(t *testing.T) {
 	for name, env := range map[string]map[string]string{
-		"role": {config.EnvRole: "invalid"}, "empty": {config.EnvRole: ""},
+		"identity": {config.EnvIdentityProvider: "headers"},
+		"role":     {config.EnvRole: "invalid"}, "empty": {config.EnvRole: ""},
 		"mode": {config.EnvProxyMode: "other"}, "missing envoy": {config.EnvProxyMode: "standalone"},
 		"mesh ownership": {config.EnvEnvoyConfig: "/etc/envoy.yaml"},
 		"relative":       {config.EnvPublicDir: "trust"}, "root": {config.EnvPublicDir: "/"},

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -16,5 +17,9 @@ func main() {
 		fmt.Fprintf(w, "upstream reached: %s\n", r.URL.Path)
 	})
 	server := &http.Server{Addr: ":8080", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	if certificate := os.Getenv("ORIGIN_TLS_CERT"); certificate != "" {
+		server.Addr = ":8443"
+		log.Fatal(server.ListenAndServeTLS(certificate, os.Getenv("ORIGIN_TLS_KEY")))
+	}
 	log.Fatal(server.ListenAndServe())
 }

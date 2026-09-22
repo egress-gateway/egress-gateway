@@ -2,7 +2,13 @@
 
 A data plane runtime that packages Envoy, the Istio agent, and an extensible OPA into one image, configured to run as either a Workload Proxy or an Egress Gateway.
 
-This work-in-progress foundation embeds the official OPA runtime and Envoy plugin in `gateway-daemon`, supervises the selected proxy process, and prepares Pod-lifetime inspection trust. The standalone example validates HTTP authorization. HTTPS inspection is blocked by the [current certificate capability gap](docs/https-capability.md); this candidate does not complete V01-01. The full GatewayProfile contract, ServiceAccount identity binding, and dynamic policy delivery are not yet implemented.
+The daemon embeds the official OPA runtime and Envoy plugin, supervises Envoy or
+pilot-agent, and supplies inspection certificates over private SDS. HTTPS is
+terminated at workload Envoy, authorized independently at both roles, and forwarded
+over verified origin TLS. The image combines Istio 1.31.0 pilot-agent with the
+official Envoy contrib 1.39.0 distribution; see the [capability and resource
+boundary](docs/https-capability.md). GatewayProfile binding and dynamic policy
+delivery remain separate work.
 
 ## Getting started
 
@@ -48,7 +54,9 @@ examples/local/        Reproducible local request path and test-only policies
 docs/                  Architecture, extensions, configuration, and compatibility
 ```
 
-`internal/request`, `internal/identity`, and `internal/artifacts` currently document ownership boundaries only. They contain no placeholder services or unimplemented Go APIs. Code will be added as the corresponding features are defined.
+`internal/request` supplies the private HTTPS target guard. Trusted identity uses
+the official OPA plugin input from verified TLS; no public policy DTO is introduced.
+`internal/identity` and `internal/artifacts` retain ownership documentation.
 
 ## Shared policy library
 

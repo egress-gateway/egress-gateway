@@ -20,7 +20,10 @@ import (
 	"github.com/egress-gateway/egress-gateway/config"
 	"github.com/egress-gateway/egress-gateway/internal/inspection"
 	gatewayopa "github.com/egress-gateway/egress-gateway/internal/opa"
+	"github.com/egress-gateway/egress-gateway/internal/request"
+	secret "github.com/envoyproxy/go-control-plane/envoy/service/secret/v3"
 	"github.com/open-policy-agent/opa/v1/runtime"
+	"google.golang.org/grpc"
 )
 
 var register sync.Once
@@ -43,12 +46,44 @@ func Run(ctx context.Context, c config.Config, policies []string) error {
 	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return errors.New("runtime directory already owned by another daemon")
 	}
+	if err := inspection.WriteAtomic(c.RequestGuardPath(), []byte(request.Source(c.Role)), 0o600); err != nil {
+		return err
+	}
+	var sdsDone <-chan error
 	if c.Role == config.Workload {
 		ca, err := inspection.Open(c.StateDir, c.PublicDir, time.Now())
 		if err != nil {
 			return err
 		}
 		defer ca.Close()
+		certificates, err := inspection.NewSecretServer(ca, 64)
+		if err != nil {
+			return err
+		}
+		if info, err := os.Lstat(c.InspectionSDSPath()); err == nil {
+			if info.Mode()&os.ModeSocket == 0 {
+				return errors.New("inspection SDS path is not a socket")
+			}
+			if err := os.Remove(c.InspectionSDSPath()); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		listener, err := net.Listen("unix", c.InspectionSDSPath())
+		if err != nil {
+			return err
+		}
+		defer listener.Close()
+		if err := os.Chmod(c.InspectionSDSPath(), 0o600); err != nil {
+			return err
+		}
+		server := grpc.NewServer(grpc.MaxRecvMsgSize(64<<10), grpc.MaxConcurrentStreams(128))
+		secret.RegisterSecretDiscoveryServiceServer(server, certificates)
+		defer server.Stop()
+		done := make(chan error, 1)
+		sdsDone = done
+		go func() { done <- server.Serve(listener) }()
 	}
 	register.Do(gatewayopa.RegisterPlugins)
 	params := runtime.NewParams()
@@ -90,6 +125,8 @@ func Run(ctx context.Context, c config.Config, policies []string) error {
 		case err = <-opaDone:
 			opaExited = true
 			return fmt.Errorf("OPA stopped before proxy startup: %v", err)
+		case err = <-sdsDone:
+			return fmt.Errorf("inspection SDS stopped before proxy startup: %v", err)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
@@ -140,6 +177,8 @@ func Run(ctx context.Context, c config.Config, policies []string) error {
 		case err = <-proxyDone:
 			exited = true
 			return fmt.Errorf("proxy stopped unexpectedly: %v", err)
+		case err = <-sdsDone:
+			return fmt.Errorf("inspection SDS stopped unexpectedly: %v", err)
 		case <-ticker.C:
 			if err = checkOPA(ctx, c); err != nil {
 				return fmt.Errorf("required OPA service failed: %w", err)
@@ -165,6 +204,11 @@ func Ready(ctx context.Context, c config.Config) error {
 		if len(ca) == 0 {
 			return errors.New("inspection CA is not published")
 		}
+		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "unix", c.InspectionSDSPath())
+		if err != nil {
+			return fmt.Errorf("inspection SDS is not ready: %w", err)
+		}
+		conn.Close()
 	}
 	if err := checkOPA(ctx, c); err != nil {
 		return err
