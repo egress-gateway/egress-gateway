@@ -432,7 +432,7 @@ func (s *scenario) tracing() error {
 			return os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-otlp.json"), raw, 0644)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("Collector lacks a complete workload-rooted trace: request=%s trace=%s root=%s egress=%t total=%d", s.id, workload.TraceID, workload.ID, egress, len(spans))
+			return fmt.Errorf("collector lacks a complete workload-rooted trace: request=%s trace=%s root=%s egress=%t total=%d", s.id, workload.TraceID, workload.ID, egress, len(spans))
 		}
 		select {
 		case <-s.ctx.Done():
