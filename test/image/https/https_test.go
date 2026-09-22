@@ -74,7 +74,10 @@ func runHTTPS(t *testing.T, tracingMode string) {
 		t.Helper()
 		fullName := "gateway-https-" + name + "-" + suffix
 		command := append([]string{"run", "-d", "--name", fullName, "--network", network, "--network-alias", name, "--memory", "256m"}, args...)
-		id := strings.TrimSpace(run(t, "docker", command...))
+		// A cold pull also writes progress to stderr; use the owned name rather
+		// than interpreting combined command output as a container ID.
+		run(t, "docker", command...)
+		id := fullName
 		t.Cleanup(func() {
 			if t.Failed() {
 				output, _ := exec.Command("docker", "logs", id).CombinedOutput()
