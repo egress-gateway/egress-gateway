@@ -1,0 +1,281 @@
+---
+apiVersion: v1
+kind: List
+items:
+- apiVersion: networking.istio.io/v1alpha3
+  kind: EnvoyFilter
+  metadata:
+    name: https-workload
+    namespace: gateway-test
+  spec:
+    workloadSelector:
+      labels:
+        app: workload
+    configPatches:
+    - applyTo: CLUSTER
+      patch:
+        operation: ADD
+        value:
+          name: inspection_sds
+          connect_timeout: 2s
+          type: STATIC
+          load_assignment:
+            cluster_name: inspection_sds
+            endpoints:
+            - lb_endpoints:
+              - endpoint:
+                  address:
+                    pipe:
+                      path: "/run/gateway/private/inspection-sds.sock"
+          circuit_breakers:
+            thresholds:
+            - max_connections: 64
+              max_pending_requests: 64
+              max_requests: 128
+              max_retries: 0
+          http2_protocol_options: {}
+    - applyTo: LISTENER
+      patch:
+        operation: ADD
+        value:
+          name: gateway-inspection
+          bind_to_port: false
+          traffic_direction: OUTBOUND
+          address:
+            socket_address:
+              address: 0.0.0.0
+              port_value: 443
+          per_connection_buffer_limit_bytes: 65536
+          listener_filters:
+          - name: envoy.filters.listener.local_ratelimit
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.listener.local_ratelimit.v3.LocalRateLimit
+              stat_prefix: inspection
+              token_bucket:
+                max_tokens: 64
+                tokens_per_fill: 64
+                fill_interval: 1s
+          - name: envoy.filters.listener.tls_inspector
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+          filter_chains:
+          - transport_socket_connect_timeout: 3s
+            transport_socket:
+              name: envoy.transport_sockets.tls
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                require_sni: true
+                disable_stateless_session_resumption: true
+                disable_stateful_session_resumption: true
+                common_tls_context:
+                  custom_tls_certificate_selector:
+                    name: envoy.tls.certificate_selectors.on_demand_secret
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_selectors.on_demand_secret.v3.Config
+                      config_source:
+                        resource_api_version: V3
+                        api_config_source:
+                          api_type: DELTA_GRPC
+                          transport_api_version: V3
+                          grpc_services:
+                          - envoy_grpc:
+                              cluster_name: inspection_sds
+                      certificate_mapper:
+                        name: envoy.tls.certificate_mappers.sni
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_mappers.sni.v3.SNI
+                          default_value: invalid/sni
+            filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: gateway_inspection
+                normalize_path: true
+                merge_slashes: true
+                path_with_escaped_slashes_action: REJECT_REQUEST
+                use_remote_address: true
+                skip_xff_append: true
+                forward_client_cert_details: SANITIZE
+                max_request_headers_kb: 16
+                request_timeout: 10s
+                stream_idle_timeout: 10s
+                common_http_protocol_options:
+                  max_headers_count: 64
+                  idle_timeout: 30s
+                  max_connection_duration: 60s
+                http2_protocol_options:
+                  max_concurrent_streams: 16
+                route_config:
+                  name: workload
+                  virtual_hosts:
+                  - name: targets
+                    domains:
+                    - "*"
+                    routes:
+                    - match:
+                        prefix: "/"
+                      route:
+                        cluster: outbound|8443||egress.gateway-test.svc.cluster.local
+                        timeout: 5s
+                http_filters:
+                - name: gateway.request
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                    default_source_code:
+                      filename: "/run/gateway/private/https-guard.lua"
+                - name: istio.metadata_exchange
+                  typed_config:
+                    "@type": type.googleapis.com/io.istio.http.peer_metadata.Config
+                    upstream_discovery:
+                    - istio_headers: {}
+                    - workload_discovery: {}
+                    upstream_propagation:
+                    - istio_headers: {}
+                - name: istio.alpn
+                  typed_config:
+                    "@type": type.googleapis.com/istio.envoy.config.filter.http.alpn.v2alpha1.FilterConfig
+                    alpn_override:
+                    - alpn_override:
+                      - istio-http/1.0
+                      - istio
+                      - http/1.0
+                    - upstream_protocol: HTTP11
+                      alpn_override:
+                      - istio-http/1.1
+                      - istio
+                      - http/1.1
+                    - upstream_protocol: HTTP2
+                      alpn_override:
+                      - istio-h2
+                      - istio
+                      - h2
+                - name: istio.stats
+                  typed_config:
+                    "@type": type.googleapis.com/stats.PluginConfig
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                access_log:
+                - name: envoy.access_loggers.stdout
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                    log_format:
+                      json_format:
+                        request_id: "%REQ(X-REQUEST-ID)%"
+                        path: "%REQ(:PATH)%"
+                        code: "%RESPONSE_CODE%"
+                        downstream_peer: "%DOWNSTREAM_PEER_URI_SAN%"
+                        upstream_peer: "%UPSTREAM_PEER_URI_SAN%"
+                        downstream_tls: "%DOWNSTREAM_TLS_VERSION%"
+                        upstream_tls: "%UPSTREAM_TLS_VERSION%"
+                        authority: "%REQ(:AUTHORITY)%"
+                        details: "%RESPONSE_CODE_DETAILS%"
+                preserve_external_request_id: true
+- apiVersion: networking.istio.io/v1alpha3
+  kind: EnvoyFilter
+  metadata:
+    name: https-egress
+    namespace: gateway-test
+  spec:
+    workloadSelector:
+      labels:
+        app: egress
+    configPatches:
+    - applyTo: CLUSTER
+      patch:
+        operation: ADD
+        value:
+          name: gateway_origin_tls
+          connect_timeout: 2s
+          lb_policy: CLUSTER_PROVIDED
+          cluster_type:
+            name: envoy.clusters.dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+              dns_cache_config:
+                name: origin_dns
+                dns_lookup_family: V4_ONLY
+                max_hosts: 64
+                dns_cache_circuit_breaker:
+                  max_pending_requests: 64
+                dns_query_timeout: 2s
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+              common_tls_context:
+                validation_context:
+                  trusted_ca:
+                    filename: "/etc/gateway/origin/ca.pem"
+          circuit_breakers:
+            thresholds:
+            - max_connections: 64
+              max_pending_requests: 64
+              max_requests: 64
+              max_retries: 0
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8443
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: gateway.request
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              filename: "/run/gateway/private/https-guard.lua"
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8443
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+            dns_cache_config:
+              name: origin_dns
+              dns_lookup_family: V4_ONLY
+              max_hosts: 64
+              dns_cache_circuit_breaker:
+                max_pending_requests: 64
+              dns_query_timeout: 2s
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+        routeConfiguration:
+          portNumber: 8443
+      patch:
+        operation: MERGE
+        value:
+          route:
+            cluster: gateway_origin_tls
+    - applyTo: FILTER_CHAIN
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8443
+      patch:
+        operation: MERGE
+        value:
+          transport_socket_connect_timeout: 3s
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              disable_stateless_session_resumption: true
+              disable_stateful_session_resumption: true

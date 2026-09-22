@@ -1,3 +1,4 @@
+---
 apiVersion: v1
 items:
 - apiVersion: v1
@@ -35,19 +36,19 @@ items:
     template:
       metadata:
         annotations:
-          sidecar.istio.io/inject: "false"
+          sidecar.istio.io/inject: 'false'
         labels:
           app: origin
       spec:
         containers:
-        - image: ${ORIGIN_TEST_IMAGE}
+        - image: "${ORIGIN_TEST_IMAGE}"
           imagePullPolicy: Never
           name: origin
           ports:
           - containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /ready
+              path: "/ready"
               port: 8080
 - apiVersion: v1
   kind: Service
@@ -74,13 +75,15 @@ items:
     template:
       metadata:
         annotations:
-          sidecar.istio.io/inject: "false"
+          sidecar.istio.io/inject: 'false'
         labels:
           app: egress
       spec:
         containers:
         - env:
           - name: GATEWAY_ROLE
+            value: egress
+          - name: ISTIO_META_WORKLOAD_NAME
             value: egress
           - name: GATEWAY_PROXY_MODE
             value: istio
@@ -115,14 +118,14 @@ items:
           - name: ISTIO_META_INTERCEPTION_MODE
             value: NONE
           - name: PROXY_CONFIG
-            value: '{"discoveryAddress":"istiod.istio-system.svc:15012"}'
-          image: ${GATEWAY_TEST_IMAGE}
+            value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+          image: "${GATEWAY_TEST_IMAGE}"
           imagePullPolicy: Never
           name: istio-proxy
           readinessProbe:
             exec:
               command:
-              - /usr/local/bin/gateway-daemon
+              - "/usr/local/bin/gateway-daemon"
               - ready
             periodSeconds: 2
             timeoutSeconds: 4
@@ -136,56 +139,76 @@ items:
             allowPrivilegeEscalation: false
             runAsGroup: 1337
             runAsUser: 1337
+            capabilities:
+              drop:
+              - ALL
           volumeMounts:
-          - mountPath: /var/lib/gateway/private
+          - mountPath: "/var/lib/gateway/private"
             name: state
-          - mountPath: /run/gateway/private
+          - mountPath: "/run/gateway/private"
             name: runtime
-          - mountPath: /run/gateway/trust
+          - mountPath: "/run/gateway/trust"
             name: public
-          - mountPath: /etc/istio/proxy
+          - mountPath: "/etc/istio/proxy"
             name: istio-data
-          - mountPath: /var/run/secrets/workload-spiffe-uds
+          - mountPath: "/var/run/secrets/workload-spiffe-uds"
             name: workload-socket
-          - mountPath: /var/run/secrets/credential-uds
+          - mountPath: "/var/run/secrets/credential-uds"
             name: credential-socket
-          - mountPath: /var/run/secrets/workload-spiffe-credentials
+          - mountPath: "/var/run/secrets/workload-spiffe-credentials"
             name: workload-certs
-          - mountPath: /var/run/secrets/tokens
+          - mountPath: "/var/run/secrets/tokens"
             name: istio-token
             readOnly: true
-          - mountPath: /var/run/secrets/istio
+          - mountPath: "/var/run/secrets/istio"
             name: istio-ca
+            readOnly: true
+          - name: origin-trust
+            mountPath: "/etc/gateway/origin"
             readOnly: true
         initContainers:
         - command:
-          - /bin/bash
-          - -ec
+          - "/bin/bash"
+          - "-ec"
           - chown 1337:1337 /state /runtime /public /bundle /istio /workload-socket
             /credential-socket /workload-certs; chmod 0700 /state /runtime /workload-socket
             /credential-socket /workload-certs; chmod 0755 /public /bundle /istio
-          image: ${GATEWAY_TEST_IMAGE}
+          image: "${GATEWAY_TEST_IMAGE}"
           imagePullPolicy: Never
           name: prepare-volumes
           securityContext:
             runAsUser: 0
           volumeMounts:
-          - mountPath: /state
+          - mountPath: "/state"
             name: state
-          - mountPath: /runtime
+          - mountPath: "/runtime"
             name: runtime
-          - mountPath: /public
+          - mountPath: "/public"
             name: public
-          - mountPath: /bundle
+          - mountPath: "/bundle"
             name: bundle
-          - mountPath: /istio
+          - mountPath: "/istio"
             name: istio-data
-          - mountPath: /workload-socket
+          - mountPath: "/workload-socket"
             name: workload-socket
-          - mountPath: /credential-socket
+          - mountPath: "/credential-socket"
             name: credential-socket
-          - mountPath: /workload-certs
+          - mountPath: "/workload-certs"
             name: workload-certs
+        - name: management-init
+          image: "${GATEWAY_TEST_IMAGE}"
+          imagePullPolicy: Never
+          command:
+          - "/usr/local/bin/gateway-management-init"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+              add:
+              - NET_ADMIN
+              - NET_RAW
         serviceAccountName: egress
         terminationGracePeriodSeconds: 20
         volumes:
@@ -215,6 +238,9 @@ items:
                 audience: istio-ca
                 expirationSeconds: 43200
                 path: istio-token
+        - name: origin-trust
+          configMap:
+            name: origin-trust
 - apiVersion: v1
   kind: Service
   metadata:
@@ -225,6 +251,9 @@ items:
     - name: https-mesh
       port: 8080
       targetPort: 8080
+    - name: https-inspection
+      port: 8443
+      targetPort: 8443
     selector:
       app: egress
 - apiVersion: v1
@@ -233,8 +262,8 @@ items:
     annotations:
       sidecar.istio.io/status: '{"initContainers": ["istio-proxy"], "containers":
         ["istio-proxy"], "volumes": [], "imagePullSecrets": [], "revision": "default"}'
-      traffic.sidecar.istio.io/includeInboundPorts: ""
-      traffic.sidecar.istio.io/includeOutboundIPRanges: '*'
+      traffic.sidecar.istio.io/includeInboundPorts: ''
+      traffic.sidecar.istio.io/includeOutboundIPRanges: "*"
     labels:
       app: workload
     name: workload
@@ -242,50 +271,69 @@ items:
   spec:
     containers:
     - command:
-      - /bin/sh
-      - -c
+      - "/bin/sh"
+      - "-c"
       - exec sleep 2147483647
-      image: ${CURL_TEST_IMAGE}
+      image: "${CURL_TEST_IMAGE}"
       name: curl
       securityContext:
         allowPrivilegeEscalation: false
         runAsUser: 1000
+        capabilities:
+          drop:
+          - ALL
       volumeMounts:
-      - mountPath: /etc/ssl/certs/ca-certificates.crt
+      - mountPath: "/cacert.pem"
         name: bundle
         readOnly: true
         subPath: ca-bundle.pem
     initContainers:
     - command:
-      - /bin/bash
-      - -ec
+      - "/bin/bash"
+      - "-ec"
       - chown 1337:1337 /state /runtime /public /bundle /istio /workload-socket /credential-socket
         /workload-certs; chmod 0700 /state /runtime /workload-socket /credential-socket
         /workload-certs; chmod 0755 /public /bundle /istio
-      image: ${GATEWAY_TEST_IMAGE}
+      image: "${GATEWAY_TEST_IMAGE}"
       imagePullPolicy: Never
       name: prepare-volumes
       securityContext:
         runAsUser: 0
       volumeMounts:
-      - mountPath: /state
+      - mountPath: "/state"
         name: state
-      - mountPath: /runtime
+      - mountPath: "/runtime"
         name: runtime
-      - mountPath: /public
+      - mountPath: "/public"
         name: public
-      - mountPath: /bundle
+      - mountPath: "/bundle"
         name: bundle
-      - mountPath: /istio
+      - mountPath: "/istio"
         name: istio-data
-      - mountPath: /workload-socket
+      - mountPath: "/workload-socket"
         name: workload-socket
-      - mountPath: /credential-socket
+      - mountPath: "/credential-socket"
         name: credential-socket
-      - mountPath: /workload-certs
+      - mountPath: "/workload-certs"
         name: workload-certs
+    - name: management-init
+      image: "${GATEWAY_TEST_IMAGE}"
+      imagePullPolicy: Never
+      command:
+      - "/usr/local/bin/gateway-management-init"
+      securityContext:
+        runAsUser: 0
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+          add:
+          - NET_ADMIN
+          - NET_RAW
     - env:
       - name: GATEWAY_ROLE
+        value: workload
+      - name: ISTIO_META_WORKLOAD_NAME
         value: workload
       - name: GATEWAY_PROXY_MODE
         value: istio
@@ -320,14 +368,14 @@ items:
       - name: ISTIO_META_INTERCEPTION_MODE
         value: REDIRECT
       - name: PROXY_CONFIG
-        value: '{"discoveryAddress":"istiod.istio-system.svc:15012"}'
-      image: ${GATEWAY_TEST_IMAGE}
+        value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+      image: "${GATEWAY_TEST_IMAGE}"
       imagePullPolicy: Never
       name: istio-proxy
       readinessProbe:
         exec:
           command:
-          - /usr/local/bin/gateway-daemon
+          - "/usr/local/bin/gateway-daemon"
           - ready
         periodSeconds: 2
         timeoutSeconds: 4
@@ -342,64 +390,73 @@ items:
         allowPrivilegeEscalation: false
         runAsGroup: 1337
         runAsUser: 1337
+        capabilities:
+          drop:
+          - ALL
       startupProbe:
         exec:
           command:
-          - /usr/local/bin/gateway-daemon
+          - "/usr/local/bin/gateway-daemon"
           - ready
         failureThreshold: 60
         periodSeconds: 2
         timeoutSeconds: 4
       volumeMounts:
-      - mountPath: /var/lib/gateway/private
+      - mountPath: "/var/lib/gateway/private"
         name: state
-      - mountPath: /run/gateway/private
+      - mountPath: "/run/gateway/private"
         name: runtime
-      - mountPath: /run/gateway/trust
+      - mountPath: "/run/gateway/trust"
         name: public
-      - mountPath: /etc/istio/proxy
+      - mountPath: "/etc/istio/proxy"
         name: istio-data
-      - mountPath: /var/run/secrets/workload-spiffe-uds
+      - mountPath: "/var/run/secrets/workload-spiffe-uds"
         name: workload-socket
-      - mountPath: /var/run/secrets/credential-uds
+      - mountPath: "/var/run/secrets/credential-uds"
         name: credential-socket
-      - mountPath: /var/run/secrets/workload-spiffe-credentials
+      - mountPath: "/var/run/secrets/workload-spiffe-credentials"
         name: workload-certs
-      - mountPath: /var/run/secrets/tokens
+      - mountPath: "/var/run/secrets/tokens"
         name: istio-token
         readOnly: true
-      - mountPath: /var/run/secrets/istio
+      - mountPath: "/var/run/secrets/istio"
         name: istio-ca
         readOnly: true
     - command:
-      - /bin/cp
-      - /etc/ssl/certs/ca-certificates.crt
-      - /bundle/base.pem
-      image: ${CURL_TEST_IMAGE}
+      - "/bin/cp"
+      - "/cacert.pem"
+      - "/bundle/base.pem"
+      image: "${CURL_TEST_IMAGE}"
       name: base-trust
       securityContext:
         runAsUser: 1337
+        capabilities:
+          drop:
+          - ALL
       volumeMounts:
-      - mountPath: /bundle
+      - mountPath: "/bundle"
         name: bundle
     - command:
-      - /usr/local/bin/gateway-daemon
+      - "/usr/local/bin/gateway-daemon"
       - trust-init
-      - --base
-      - /bundle/base.pem
-      - --ca
-      - /public/inspection-ca.pem
-      - --output
-      - /bundle/ca-bundle.pem
-      image: ${GATEWAY_TEST_IMAGE}
+      - "--base"
+      - "/bundle/base.pem"
+      - "--ca"
+      - "/public/inspection-ca.pem"
+      - "--output"
+      - "/bundle/ca-bundle.pem"
+      image: "${GATEWAY_TEST_IMAGE}"
       imagePullPolicy: Never
       name: trust-init
       securityContext:
         runAsUser: 1337
+        capabilities:
+          drop:
+          - ALL
       volumeMounts:
-      - mountPath: /bundle
+      - mountPath: "/bundle"
         name: bundle
-      - mountPath: /public
+      - mountPath: "/public"
         name: public
         readOnly: true
     serviceAccountName: workload
@@ -448,6 +505,14 @@ items:
         protocol: HTTPS
       tls:
         mode: ISTIO_MUTUAL
+    - hosts:
+      - "*"
+      port:
+        name: https-inspection
+        number: 8443
+        protocol: HTTPS
+      tls:
+        mode: ISTIO_MUTUAL
 - apiVersion: networking.istio.io/v1
   kind: DestinationRule
   metadata:
@@ -461,6 +526,14 @@ items:
         sni: origin.gateway-origin.svc.cluster.local
         subjectAltNames:
         - spiffe://cluster.local/ns/gateway-test/sa/egress
+      portLevelSettings:
+      - port:
+          number: 8443
+        tls:
+          mode: ISTIO_MUTUAL
+          sni: inspection.mesh
+          subjectAltNames:
+          - spiffe://cluster.local/ns/gateway-test/sa/egress
 - apiVersion: networking.istio.io/v1
   kind: VirtualService
   metadata:
@@ -509,9 +582,93 @@ items:
         operation: MERGE
         value:
           typed_config:
-            '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
             preserve_external_request_id: true
     workloadSelector:
       labels:
         app: egress
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: origin-https
+    namespace: gateway-origin
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: origin-https
+    template:
+      metadata:
+        annotations:
+          sidecar.istio.io/inject: 'false'
+        labels:
+          app: origin-https
+      spec:
+        containers:
+        - image: "${ORIGIN_TEST_IMAGE}"
+          imagePullPolicy: Never
+          name: origin
+          ports:
+          - containerPort: 8443
+          readinessProbe:
+            tcpSocket:
+              port: 8443
+          env:
+          - name: ORIGIN_TLS_CERT
+            value: "/certs/tls.crt"
+          - name: ORIGIN_TLS_KEY
+            value: "/certs/tls.key"
+          volumeMounts:
+          - name: tls
+            mountPath: "/certs"
+            readOnly: true
+        volumes:
+        - name: tls
+          secret:
+            secretName: origin-tls
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: origin-https
+    namespace: gateway-origin
+  spec:
+    ports:
+    - name: tls
+      port: 443
+      targetPort: 8443
+    selector:
+      app: origin-https
+- apiVersion: networking.istio.io/v1
+  kind: VirtualService
+  metadata:
+    name: inspection-egress
+    namespace: gateway-test
+  spec:
+    hosts:
+    - "*"
+    gateways:
+    - egress
+    http:
+    - retries:
+        attempts: 0
+      match:
+      - port: 8443
+      route:
+      - destination:
+          host: origin-https.gateway-origin.svc.cluster.local
+          port:
+            number: 443
+- apiVersion: networking.istio.io/v1
+  kind: Sidecar
+  metadata:
+    name: workload
+    namespace: gateway-test
+  spec:
+    workloadSelector:
+      labels:
+        app: workload
+    egress:
+    - hosts:
+      - gateway-test/*
+      - gateway-origin/origin.gateway-origin.svc.cluster.local
 kind: List

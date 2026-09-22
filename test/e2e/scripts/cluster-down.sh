@@ -4,3 +4,5 @@ require kind docker
 verify_owner
 kind delete cluster --name "$cluster" --kubeconfig "$kubeconfig"
 rm -f "$state_dir/node-id" "$kubeconfig"
+
+rm -rf "$state_dir/origin-tls"
