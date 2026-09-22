@@ -107,3 +107,9 @@ inspection resource bounds. The script is safe to rerun after interrupted init.
 
 Origin trust must be mounted independently; inspection trust never grants origin
 trust. See [capability limits](https-capability.md) and [validation scope](compatibility.md).
+
+## Tracing
+
+See [OpenTelemetry tracing](tracing.md) for the separate Istio Envoy, standalone
+Envoy and embedded OPA inputs, supported standard environment variables, limits
+and Collector-based acceptance. Environment changes require a restart.

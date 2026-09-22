@@ -108,3 +108,14 @@ Management initialization applies UID-based IPv4/IPv6 rules with one-time
 NET_ADMIN/NET_RAW. Application and runtime containers drop all capabilities. The
 scenario probes management sockets over IPv4, IPv6 and the Pod IP; pilot-agent's
 successful public-certificate query proves proxy access still works.
+
+## Tracing collection
+
+The version/digest-pinned upstream Collector writes structured OTLP JSON to a
+fixture-only shared volume. Its reader container exposes no service. HTTP and
+HTTPS scenarios assert linked workload/egress proxy spans, preserving their
+request UUID and incoming W3C parent. `Telemetry` configures ordinary listeners;
+the custom HTTPS listener explicitly selects the same native provider. OPA
+environment variables point at a different receiver, so a misdirected or duplicate
+Envoy exporter is observable. Successful OTLP records are retained with the other
+public fixture artifacts. OPA authorization spans are verified by `make smoke`.

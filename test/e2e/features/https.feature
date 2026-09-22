@@ -6,6 +6,7 @@ Feature: Transparent HTTPS inspection with real Istio identity
     Then the origin responds successfully
     And both proxies and the origin record the request identifier
     And the proxy hop uses live Istio mutual TLS
+    And the Collector receives correlated spans from both proxies
     And the client verifies the inspection certificate and egress verifies origin TLS
     And the application cannot access private proxy management
     And Istio telemetry records successful proxy traffic

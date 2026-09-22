@@ -9,6 +9,7 @@ Feature: Transparent HTTP connectivity through the gateway image
     Then the origin responds successfully
     And both proxies and the origin record the request identifier
     And the proxy hop uses live Istio mutual TLS
+    And the Collector receives correlated spans from both proxies
 
     Examples:
       | path    |

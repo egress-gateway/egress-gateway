@@ -17,6 +17,7 @@ import (
 
 	"github.com/cucumber/godog"
 	"github.com/egress-gateway/egress-gateway/test/e2e/environment"
+	"github.com/egress-gateway/egress-gateway/test/telemetry"
 	"github.com/google/uuid"
 )
 
@@ -56,6 +57,7 @@ func Run(ctx context.Context, e *environment.Environment, tags string) error {
 		sc.Step(`^the origin responds successfully$`, s.success)
 		sc.Step(`^both proxies and the origin record the request identifier$`, s.correlate)
 		sc.Step(`^the proxy hop uses live Istio mutual TLS$`, s.mutualTLS)
+		sc.Step(`^the Collector receives correlated spans from both proxies$`, s.tracing)
 		sc.Step(`^Istio telemetry records successful proxy traffic$`, s.telemetry)
 		sc.Step(`^the image accepts the on-demand certificate configuration$`, s.capability)
 	}}
@@ -95,7 +97,7 @@ func (s *scenario) trust() error {
 	return errors.New("workload startup bundle does not contain published inspection CA")
 }
 func (s *scenario) request(path string) error {
-	raw, err := s.command("exec", "-n", "gateway-test", "workload", "-c", "curl", "--", "curl", "--fail", "--silent", "--show-error", "--max-time", "10", "-H", "X-Request-Id: "+s.id, "-w", "\n%{http_code}\n", "http://origin.gateway-origin.svc.cluster.local"+path)
+	raw, err := s.command("exec", "-n", "gateway-test", "workload", "-c", "curl", "--", "curl", "--fail", "--silent", "--show-error", "--max-time", "10", "-H", "X-Request-Id: "+s.id, "-H", "traceparent: 00-"+strings.ReplaceAll(s.id, "-", "")+"-0123456789abcdef-01", "-w", "\n%{http_code}\n", "http://origin.gateway-origin.svc.cluster.local"+path)
 	s.response = string(raw)
 	if err != nil {
 		return fmt.Errorf("single request failed: %w: %s", err, raw)
@@ -235,7 +237,7 @@ func (s *scenario) httpsRequest() error {
 		}
 		s.metricsBefore[pod] = count
 	}
-	raw, err := s.command("exec", "-n", "gateway-test", "workload", "-c", "curl", "--", "curl", "--fail", "--silent", "--show-error", "--max-time", "10", "-H", "X-Request-Id: "+s.id, "-w", "\n%{http_code}\n%{ssl_verify_result}\n%{certs}", "https://"+host+"/inspected")
+	raw, err := s.command("exec", "-n", "gateway-test", "workload", "-c", "curl", "--", "curl", "--fail", "--silent", "--show-error", "--max-time", "10", "-H", "X-Request-Id: "+s.id, "-H", "traceparent: 00-"+strings.ReplaceAll(s.id, "-", "")+"-0123456789abcdef-01", "-w", "\n%{http_code}\n%{ssl_verify_result}\n%{certs}", "https://"+host+"/inspected")
 	if writeErr := os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-client-tls.txt"), raw, 0644); writeErr != nil {
 		return writeErr
 	}
@@ -365,4 +367,59 @@ func (s *scenario) telemetry() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-telemetry.json"), raw, 0644)
+}
+
+func (s *scenario) tracing() error {
+	traceID := strings.ReplaceAll(s.id, "-", "")
+	deadline := time.Now().Add(25 * time.Second)
+	for {
+		raw, err := s.command("exec", "-n", "gateway-test", "deployment/otel-collector", "-c", "reader", "--", "cat", "/data/envoy.json")
+		if err != nil {
+			return fmt.Errorf("Collector evidence: %w", err)
+		}
+		spans, err := telemetry.Read(raw)
+		if err != nil {
+			return err
+		}
+		var workload, egress telemetry.Span
+		for _, span := range spans {
+			if span.Service == "opa-env-boundary" {
+				return errors.New("OPA environment changed the Envoy exporter")
+			}
+			if span.TraceID != traceID || span.Attributes["fixture.request_id"] != s.id {
+				continue
+			}
+			if strings.Contains(span.Service, "workload") {
+				workload = span
+			}
+			if strings.Contains(span.Service, "egress") {
+				egress = span
+			}
+		}
+		if workload.ID != "" && egress.ID != "" && telemetry.Descends(spans, egress, workload.ID) && telemetry.Descends(spans, workload, "0123456789abcdef") {
+			// The second receiver is the OPA environment target. Envoy must not also export there.
+			opaRaw, err := s.command("exec", "-n", "gateway-test", "deployment/otel-collector", "-c", "reader", "--", "cat", "/data/opa.json")
+			if err != nil {
+				return err
+			}
+			opaSpans, err := telemetry.Read(opaRaw)
+			if err != nil {
+				return err
+			}
+			for _, span := range opaSpans {
+				if span.Service != "opa-env-boundary" {
+					return errors.New("Envoy exported to the OPA-only endpoint")
+				}
+			}
+			return os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-otlp.json"), raw, 0644)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Collector lacks correlated proxy spans: trace=%s workload=%s egress=%s total=%d", traceID, workload.ID, egress.ID, len(spans))
+		}
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }

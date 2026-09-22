@@ -19,7 +19,10 @@ mkdir -m 0700 "$origin_tls"
 )
 k create secret tls origin-tls -n gateway-origin --cert="$origin_tls/tls.crt" --key="$origin_tls/tls.key" --dry-run=client -o yaml | k apply -f -
 k create configmap origin-trust -n gateway-test --from-file=ca.pem="$origin_tls/ca.pem" --dry-run=client -o yaml | k apply -f -
-export GATEWAY_TEST_IMAGE="$image" ORIGIN_TEST_IMAGE="$image-origin" CURL_TEST_IMAGE="$CURL_IMAGE"
+export GATEWAY_TEST_IMAGE="$image" ORIGIN_TEST_IMAGE="$image-origin" CURL_TEST_IMAGE="$CURL_IMAGE" OTEL_COLLECTOR_IMAGE
+envsubst '${OTEL_COLLECTOR_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/tracing.yaml" > "$artifacts/rendered-tracing.yaml"
+k apply -f "$artifacts/rendered-tracing.yaml"
+k rollout status deployment/otel-collector -n gateway-test --timeout=180s
 envsubst '${GATEWAY_TEST_IMAGE} ${ORIGIN_TEST_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/fixtures.yaml" > "$artifacts/rendered-fixtures.yaml"
 k apply -f "$artifacts/rendered-fixtures.yaml"
 k apply -f "$config_dir/https.yaml"

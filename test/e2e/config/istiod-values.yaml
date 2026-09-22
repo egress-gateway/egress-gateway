@@ -6,6 +6,12 @@ resources:
     cpu: 100m
     memory: 256Mi
 meshConfig:
+  enableTracing: true
+  extensionProviders:
+  - name: fixture-otel
+    opentelemetry:
+      service: otel-collector.gateway-test.svc.cluster.local
+      port: 4317
   accessLogFile: /dev/stdout
   accessLogEncoding: JSON
   accessLogFormat: |

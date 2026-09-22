@@ -34,6 +34,10 @@ type authority struct {
 }
 
 func TestHTTPSInspection(t *testing.T) {
+	runHTTPS(t, "")
+}
+
+func runHTTPS(t *testing.T, tracingMode string) {
 	root, err := filepath.Abs("../../..")
 	if err != nil {
 		t.Fatal(err)
@@ -80,12 +84,33 @@ func TestHTTPSInspection(t *testing.T) {
 		})
 		return id
 	}
+	var collectorID string
+	if tracingMode != "" {
+		collectorID = startTracingCollector(t, state, start)
+	}
 	startProxy := func(role string) string {
+		envoyConfig := filepath.Join(fixture, role+"-envoy.json")
+		opaConfig := filepath.Join(root, "examples/local", role+"-opa.yaml")
+		if tracingMode == "disabled" {
+			raw, err := os.ReadFile(opaConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw = append(raw, []byte("\ndistributed_tracing:\n  type: grpc\n  address: collector:4319\n  service_name: native-opa-must-be-disabled\n")...)
+			opaConfig = filepath.Join(state, role+"-native-opa.yaml")
+			writeFixture(t, opaConfig, raw)
+		}
+		if tracingMode != "" {
+			envoyConfig = tracingBootstrap(t, state, envoyConfig, role, tracingMode != "disabled")
+		}
 		args := []string{"-p", "127.0.0.1::8443", "-e", "GATEWAY_ROLE=" + role, "-e", "GATEWAY_PROXY_MODE=standalone", "-e", "ENVOY_CONFIG=/fixture/envoy.json", "-e", "OPA_CONFIG=/fixture/opa.yaml",
-			"-v", filepath.Join(fixture, role+"-envoy.json") + ":/fixture/envoy.json:ro",
+			"-v", envoyConfig + ":/fixture/envoy.json:ro",
 			"-v", filepath.Join(fixture, role+".rego") + ":/fixture/policy.rego:ro",
-			"-v", filepath.Join(root, "examples/local", role+"-opa.yaml") + ":/fixture/opa.yaml:ro"}
+			"-v", opaConfig + ":/fixture/opa.yaml:ro"}
 		args = append(args, mountCerts(role+".pem", role+"-key.pem", "mesh-ca.pem", "origin-ca.pem")...)
+		if tracingMode != "" {
+			args = append(args, tracingEnvironment(state, role, tracingMode)...)
+		}
 		args = append(args, image, "--policy", "/fixture/policy.rego")
 		id := start(role, args...)
 		until(t, 30*time.Second, func() bool { return exec.Command("docker", "exec", id, "gateway-daemon", "ready").Run() == nil })
@@ -149,6 +174,10 @@ func TestHTTPSInspection(t *testing.T) {
 		return response.StatusCode, string(data), response.TLS
 	}
 	var coldSerial string
+	if tracingMode != "" {
+		verifyTracing(t, state, tracingMode, collectorID, workload, egress, host, send)
+		return
+	}
 	t.Run("first-unseen-host-and-warm-reuse", func(t *testing.T) {
 		started := time.Now()
 		code, body, state := send(t, host, `{"action":"safe"}`, map[string]string{"X-Request-Id": "https-cold"})
