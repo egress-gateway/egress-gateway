@@ -33,3 +33,19 @@ smoke:
 
 clean:
 	rm -f bin/gateway-opa bin/gateway-daemon coverage.out
+
+E2E_CLUSTER ?= gateway-e2e-local
+E2E_IMAGE ?= egress-gateway:e2e
+E2E_ARTIFACTS ?= $(CURDIR)/.e2e/artifacts
+E2E_STATE ?= $(CURDIR)/.e2e/state
+E2E_TAGS ?=
+E2E_ARGS = --root "$(CURDIR)" --cluster "$(E2E_CLUSTER)" --image "$(E2E_IMAGE)" --artifacts "$(E2E_ARTIFACTS)" --state "$(E2E_STATE)" --tags "$(E2E_TAGS)"
+.PHONY: e2e e2e-up e2e-test e2e-down
+e2e:
+	$(GO) run ./cmd/gateway-e2e --mode run $(E2E_ARGS)
+e2e-up:
+	$(GO) run ./cmd/gateway-e2e --mode up $(E2E_ARGS)
+e2e-test:
+	$(GO) run ./cmd/gateway-e2e --mode test $(E2E_ARGS)
+e2e-down:
+	$(GO) run ./cmd/gateway-e2e --mode down $(E2E_ARGS)

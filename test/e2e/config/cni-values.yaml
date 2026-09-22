@@ -1,0 +1,14 @@
+cniBinDir: /opt/cni/bin
+cniConfDir: /etc/cni/net.d
+chained: true
+ambient:
+  enabled: false
+excludeNamespaces:
+  - kube-system
+  - istio-system
+repair:
+  enabled: true
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
