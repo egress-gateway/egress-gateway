@@ -28,7 +28,7 @@ var register sync.Once
 // Run treats required-service failure as terminal; container orchestration owns
 // restarts. Policies are explicit local startup files; OPA_CONFIG retains bundle
 // support. Arbitrary OPA CLI flags cannot override private listener ownership.
-func Run(ctx context.Context, c config.Config, policies []string) error {
+func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -112,6 +112,12 @@ func Run(ctx context.Context, c config.Config, policies []string) error {
 	if err = proxy.Start(); err != nil {
 		return fmt.Errorf("start proxy: %w", err)
 	}
+	defer func() {
+		// Shutdown can interrupt a probe or race a service-exit notification.
+		if ctx.Err() != nil {
+			err = nil
+		}
+	}()
 	proxyDone := make(chan error, 1)
 	go func() { proxyDone <- proxy.Wait() }()
 	exited := false
