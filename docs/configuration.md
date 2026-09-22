@@ -16,7 +16,8 @@ OPA or Envoy dependencies. The daemon consumes this package directly.
 
 Unset variables use defaults. Explicit empty values are rejected. Paths must be
 clean absolute paths. All three directories must be disjoint; directory symlinks
-and group/world-accessible private directories are rejected. Deployment must
+and group/world-accessible private directories are rejected. Public directories
+must not be group- or world-writable. Deployment must
 prepare private volume ownership for UID 1337 with mode 0700. Mounting one shared
 parent directory into an application does not satisfy the contract.
 
@@ -45,7 +46,9 @@ fails startup without replacing it. Public trust without private state also fail
 rather than silently changing the running application's CA.
 
 `<public>/inspection-ca.pem` contains only the root certificate. This file is
-published atomically before either managed runtime starts. It is not a complete
+published atomically without replacing an existing file before either managed
+runtime starts. An existing certificate must match the private CA, including when
+another process publishes first. It is not a complete
 operating-system trust bundle and does not authorize trusting origins.
 
 A deployment prepares an application bundle before application startup:
