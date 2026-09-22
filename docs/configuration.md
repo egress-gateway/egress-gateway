@@ -8,6 +8,7 @@ OPA or Envoy dependencies. The daemon consumes this package directly.
 |---|---|---|
 | `GATEWAY_ROLE` | `workload` | `workload` selects a sidecar; `egress` selects a router |
 | `GATEWAY_PROXY_MODE` | `istio` | `standalone` supervises Envoy; `istio` supervises pilot-agent |
+| `GATEWAY_IDENTITY_PROVIDER` | `istio-mtls` | Verified peer TLS principal through the official OPA plugin; other providers fail startup |
 | `OPA_CONFIG` | `/etc/gateway/opa/<role>.yaml` | Embedded OPA configuration; upstream bundle capabilities remain available |
 | `ENVOY_CONFIG` | Unset | Required standalone bootstrap; rejected in Istio mode |
 | `GATEWAY_STATE_DIR` | `/var/lib/gateway/private` | Private Pod-lifetime inspection CA state |
@@ -68,14 +69,38 @@ not prevent applications from starting too early.
 Inspection trust, origin trust, and Istio identity are separate. No inspection
 certificate is installed into an origin trust store or used for mesh identity.
 
-## Current implementation boundary
+## HTTPS and private interfaces
 
-The standalone HTTP fixture tests embedded OPA, complete-body authorization at
-both roles (64 KiB buffering, partial bodies disabled), private interfaces and
-process/CA lifecycle. It does **not** implement or certify HTTPS inspection.
-Dynamic certificate SDS, target binding, verified origin TLS, trusted peer identity
-adaptation and the full mesh management boundary remain incomplete behind the
-[certificate capability blocker](https-capability.md). In particular, stock
-pilot-agent's management listeners have not yet been isolated from applications
-sharing its network namespace. Do not treat this partial candidate as V01-01
-acceptance or as a production boundary for untrusted workloads.
+`Config.InspectionSDSPath()` identifies `<runtime>/inspection-sds.sock`; the workload
+role serves inspection secrets there before starting Envoy. `Config.RequestGuardPath()`
+identifies the generated `<runtime>/https-guard.lua`, shared by standalone and
+Istiod-owned listener configuration. Both files stay private. Standalone preparation
+rewrites the named `inspection_sds` cluster and `gateway.request`/`gateway.dispatch` filters. Istio
+integration references the same paths through EnvoyFilter; the daemon does not
+publish competing mesh xDS resources.
+
+Install the guard only on dedicated HTTPS listeners. It validates SNI against the
+canonical authority at workload ingress and fixes scheme to HTTPS at both roles.
+Egress obtains the official OPA `input.source_principal` from Envoy-verified TLS.
+There is no custom identity or original-scheme header protocol. Authorization must
+buffer complete bodies up to 64 KiB, reject partial bodies and errors, prohibit
+decision mutations of the authorized target, and precede dynamic forward proxy.
+Install `gateway.request` before authorization and `gateway.dispatch` immediately
+after it. The second guard rejects any authority, scheme or path/query change from
+the original canonical target; Envoy header mutation rules alone do not cover OPA
+query mutations. Non-identity Content-Encoding is rejected with 415 before body
+authorization; no decompressor is provided. The component configuration under
+`test/image/https` demonstrates this contract.
+
+Istio requires TCP management ports for its agent and Envoy. Deployments run
+`gateway-management-init` once with UID 0 and NET_ADMIN/NET_RAW before applications
+start. Its IPv4/IPv6 rules permit local management on 15000/15020/15004 only to
+proxy UID 1337 and reject remote ingress to those ports. Runtime containers drop
+all capabilities, disable privilege escalation, and applications use a different
+UID. Do not share UID 1337 or private mounts with an application. Readiness 15021
+remains accessible. The image defaults `ISTIO_BOOTSTRAP_OVERRIDE` to
+`/etc/gateway/envoy-limits.json`; custom bootstrap inputs must preserve the supplied
+inspection resource bounds. The script is safe to rerun after interrupted init.
+
+Origin trust must be mounted independently; inspection trust never grants origin
+trust. See [capability limits](https-capability.md) and [validation scope](compatibility.md).

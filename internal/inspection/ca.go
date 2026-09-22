@@ -230,26 +230,37 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 // Bundle explicitly merges a declared base store with the inspection CA. Call
 // during trust initialization, before starting the application.
 func Bundle(base, inspectionCA []byte) ([]byte, error) {
+	var bundle bytes.Buffer
 	for _, input := range [][]byte{base, inspectionCA} {
 		remaining := bytes.TrimSpace(input)
 		count := 0
 		for len(remaining) > 0 {
-			if !bytes.HasPrefix(remaining, []byte("-----BEGIN CERTIFICATE-----")) {
-				return nil, errors.New("trust input contains non-certificate data")
+			// Distribution PEM stores may include comments and certificate
+			// titles. Ignore annotations, but validate every actual PEM block.
+			start := bytes.Index(remaining, []byte("-----BEGIN "))
+			if start < 0 {
+				break
 			}
-			block, rest := pem.Decode(remaining)
-			if block == nil || block.Type != "CERTIFICATE" {
+			remaining = remaining[start:]
+			if !bytes.HasPrefix(remaining, []byte("-----BEGIN CERTIFICATE-----")) {
 				return nil, errors.New("trust input must contain only PEM certificates")
 			}
+			block, rest := pem.Decode(remaining)
+			if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+				return nil, errors.New("invalid trust certificate PEM")
+			}
 			if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+				return nil, err
+			}
+			if err := pem.Encode(&bundle, block); err != nil {
 				return nil, err
 			}
 			remaining = bytes.TrimSpace(rest)
 			count++
 		}
 		if count == 0 {
-			return nil, errors.New("trust input is empty")
+			return nil, errors.New("trust input has no certificates")
 		}
 	}
-	return append(append(bytes.TrimSpace(base), '\n'), inspectionCA...), nil
+	return bundle.Bytes(), nil
 }

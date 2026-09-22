@@ -57,6 +57,11 @@ workload_id="$("${compose[@]}" ps -q workload)"
 if "${compose[@]}" exec -T --user 65534 workload test -r /var/lib/gateway/private/inspection-ca.json; then
   echo 'unprivileged workload can read signing state' >&2; exit 1
 fi
+for private_socket in opa.sock opa-api.sock inspection-sds.sock envoy-admin.sock; do
+  if "${compose[@]}" exec -T --user 65534 workload test -r "/run/gateway/private/$private_socket"; then
+    echo 'unprivileged workload can access private runtime socket' >&2; exit 1
+  fi
+done
 # First prove the TCP probe works against the known-open application listener.
 probe_image=busybox:1.36.1
 docker run --rm --network "container:$workload_id" "$probe_image" \

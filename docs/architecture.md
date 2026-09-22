@@ -18,7 +18,7 @@ The authorization socket and OPA management socket are private filesystem socket
 Standalone Envoy's admin socket uses the same private directory. The trusted
 configuration producer still owns listener and route contents; arbitrary mounted
 configuration is not treated as untrusted workload input. Istio management
-isolation is not yet verified; see the explicit partial-delivery boundary in
+isolation uses the one-time Pod UID rules described in
 [configuration](configuration.md).
 
 | Owner | Responsibility |
@@ -32,6 +32,6 @@ isolation is not yet verified; see the explicit partial-delivery boundary in
 
 The HTTP fixture uses two independent OPA checks with bounded complete-body
 buffering. These test-only policies do not define shared policy semantics. No
-application-supplied identity is promoted into a verified principal. The real
-Istio principal adapter and HTTPS enforcement remain incomplete; do not infer
-those guarantees from the HTTP fixture or prepared CA files.
+application-supplied identity is promoted into a verified principal. The HTTPS fixture verifies the official plugin
+principal against a validated mesh-style peer certificate. Only the separate
+kind suite establishes real Istiod credentials and transparent CNI capture.

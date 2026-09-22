@@ -169,7 +169,7 @@ func TestBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := Bundle(ca, ca)
+	bundle, err := Bundle(append([]byte("## Distribution root bundle\nRoot name\n==========\n"), ca...), ca)
 	if err != nil || bytes.Count(bundle, []byte("BEGIN CERTIFICATE")) != 2 {
 		t.Fatalf("merge: %v", err)
 	}
