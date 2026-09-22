@@ -14,6 +14,7 @@ import (
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	secret "github.com/envoyproxy/go-control-plane/envoy/service/secret/v3"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -55,6 +56,14 @@ func NewSecretServer(authority *Authority, capacity int) (*SecretServer, error) 
 		return nil, errors.New("invalid inspection certificate capacity")
 	}
 	return &SecretServer{authority: authority, capacity: capacity, entries: make(map[string]*list.Element), watches: make(map[*secretWatch]struct{})}, nil
+}
+
+// GRPCServer leaves room for contrib build metadata in the trusted local Envoy
+// Node while retaining a finite message bound independent of HTTP body limits.
+func (s *SecretServer) GRPCServer() *grpc.Server {
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(256<<10), grpc.MaxConcurrentStreams(128))
+	secret.RegisterSecretDiscoveryServiceServer(server, s)
+	return server
 }
 
 func (s *SecretServer) DeltaSecrets(stream secret.SecretDiscoveryService_DeltaSecretsServer) error {

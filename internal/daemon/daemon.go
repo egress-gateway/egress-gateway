@@ -21,9 +21,7 @@ import (
 	"github.com/egress-gateway/egress-gateway/internal/inspection"
 	gatewayopa "github.com/egress-gateway/egress-gateway/internal/opa"
 	"github.com/egress-gateway/egress-gateway/internal/request"
-	secret "github.com/envoyproxy/go-control-plane/envoy/service/secret/v3"
 	"github.com/open-policy-agent/opa/v1/runtime"
-	"google.golang.org/grpc"
 )
 
 var register sync.Once
@@ -78,8 +76,7 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 		if err := os.Chmod(c.InspectionSDSPath(), 0o600); err != nil {
 			return err
 		}
-		server := grpc.NewServer(grpc.MaxRecvMsgSize(64<<10), grpc.MaxConcurrentStreams(128))
-		secret.RegisterSecretDiscoveryServiceServer(server, certificates)
+		server := certificates.GRPCServer()
 		defer server.Stop()
 		done := make(chan error, 1)
 		sdsDone = done
