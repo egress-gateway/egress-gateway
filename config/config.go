@@ -50,6 +50,7 @@ type Config struct {
 	StateDir         string
 	PublicDir        string
 	RuntimeDir       string
+	Tracing          *Tracing
 }
 
 func Defaults() Config {
@@ -86,6 +87,10 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		if err != nil {
 			return c, err
 		}
+	}
+	c.Tracing, err = LoadTracing(lookup)
+	if err != nil {
+		return c, err
 	}
 	return c, c.Validate()
 }

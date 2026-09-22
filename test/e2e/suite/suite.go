@@ -17,7 +17,9 @@ import (
 
 	"github.com/cucumber/godog"
 	"github.com/egress-gateway/egress-gateway/test/e2e/environment"
+	"github.com/egress-gateway/egress-gateway/test/telemetry"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type scenario struct {
@@ -48,14 +50,15 @@ func Run(ctx context.Context, e *environment.Environment, tags string) error {
 			}
 			return ctx, scenarioErr
 		})
-		sc.Step(`^the workload sends its first HTTPS request to a newly selected hostname$`, s.httpsRequest)
+		sc.Step(`^the workload sends its first HTTPS request without trace context to a newly selected hostname$`, s.httpsRequest)
 		sc.Step(`^the client verifies the inspection certificate and egress verifies origin TLS$`, s.inspectionTLS)
 		sc.Step(`^the application cannot access private proxy management$`, s.privateManagement)
 		sc.Step(`^the workload has a startup-prepared inspection trust bundle$`, s.trust)
-		sc.Step(`^the workload sends an HTTP request to "([^"]*)"$`, s.request)
+		sc.Step(`^the workload sends an HTTP request without trace context to "([^"]*)"$`, s.request)
 		sc.Step(`^the origin responds successfully$`, s.success)
 		sc.Step(`^both proxies and the origin record the request identifier$`, s.correlate)
 		sc.Step(`^the proxy hop uses live Istio mutual TLS$`, s.mutualTLS)
+		sc.Step(`^the Collector receives a workload-rooted trace linking both proxies$`, s.tracing)
 		sc.Step(`^Istio telemetry records successful proxy traffic$`, s.telemetry)
 		sc.Step(`^the image accepts the on-demand certificate configuration$`, s.capability)
 	}}
@@ -365,4 +368,76 @@ func (s *scenario) telemetry() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-telemetry.json"), raw, 0644)
+}
+
+func (s *scenario) tracing() error {
+	deadline := time.Now().Add(25 * time.Second)
+	for {
+		raw, err := s.command("exec", "-n", "gateway-test", "deployment/otel-collector", "-c", "reader", "--", "cat", "/data/envoy.json")
+		if err != nil {
+			return fmt.Errorf("Collector evidence: %w", err)
+		}
+		spans, err := telemetry.Read(raw)
+		if err != nil {
+			return err
+		}
+		var workload telemetry.Span
+		for _, span := range spans {
+			if span.Service == "opa-env-boundary" {
+				return errors.New("OPA environment changed the Envoy exporter")
+			}
+			if span.Attributes["fixture.request_id"] == s.id && strings.Contains(span.Service, "workload") && span.ParentID == "" {
+				if workload.ID != "" && workload.ID != span.ID {
+					return errors.New("request has multiple workload root spans")
+				}
+				workload = span
+			}
+		}
+		complete, egress := workload.ID != "", false
+		if complete {
+			if _, err := trace.TraceIDFromHex(workload.TraceID); err != nil {
+				return fmt.Errorf("workload generated an invalid trace ID: %w", err)
+			}
+			if _, err := trace.SpanIDFromHex(workload.ID); err != nil {
+				return fmt.Errorf("workload generated an invalid root span ID: %w", err)
+			}
+			for _, span := range spans {
+				if span.Attributes["fixture.request_id"] != s.id {
+					continue
+				}
+				if span.TraceID != workload.TraceID {
+					return errors.New("proxy spans for one request have different trace IDs")
+				}
+				if span.ID != workload.ID && !telemetry.Descends(spans, span, workload.ID) {
+					complete = false
+				}
+				egress = egress || strings.Contains(span.Service, "egress")
+			}
+		}
+		if complete && egress {
+			// The second receiver is the OPA environment target. Envoy must not also export there.
+			opaRaw, err := s.command("exec", "-n", "gateway-test", "deployment/otel-collector", "-c", "reader", "--", "cat", "/data/opa.json")
+			if err != nil {
+				return err
+			}
+			opaSpans, err := telemetry.Read(opaRaw)
+			if err != nil {
+				return err
+			}
+			for _, span := range opaSpans {
+				if span.Service != "opa-env-boundary" {
+					return errors.New("Envoy exported to the OPA-only endpoint")
+				}
+			}
+			return os.WriteFile(filepath.Join(s.env.Config.Artifacts, s.id+"-otlp.json"), raw, 0644)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("collector lacks a complete workload-rooted trace: request=%s trace=%s root=%s egress=%t total=%d", s.id, workload.TraceID, workload.ID, egress, len(spans))
+		}
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }

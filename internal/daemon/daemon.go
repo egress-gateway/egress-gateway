@@ -84,7 +84,10 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	}
 	register.Do(gatewayopa.RegisterPlugins)
 	params := runtime.NewParams()
-	params.ConfigFile = c.OPAConfig
+	params.ConfigFile, err = prepareOPA(c)
+	if err != nil {
+		return fmt.Errorf("prepare OPA: %w", err)
+	}
 	params.Paths = policies
 	params.Addrs = new([]string{"unix://" + filepath.Join(c.RuntimeDir, "opa-api.sock")})
 	params.AddrSetByUser = true

@@ -117,6 +117,12 @@ items:
             value: cluster.local
           - name: ISTIO_META_INTERCEPTION_MODE
             value: NONE
+          - name: OTEL_SERVICE_NAME
+            value: opa-env-boundary
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: http://otel-collector.gateway-test.svc.cluster.local:4318
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: http/protobuf
           - name: PROXY_CONFIG
             value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
           image: "${GATEWAY_TEST_IMAGE}"
@@ -367,6 +373,12 @@ items:
         value: cluster.local
       - name: ISTIO_META_INTERCEPTION_MODE
         value: REDIRECT
+      - name: OTEL_SERVICE_NAME
+        value: opa-env-boundary
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://otel-collector.gateway-test.svc.cluster.local:4318
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: http/protobuf
       - name: PROXY_CONFIG
         value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
       image: "${GATEWAY_TEST_IMAGE}"
