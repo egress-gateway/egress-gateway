@@ -2,8 +2,10 @@ package inspection
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,5 +235,122 @@ func TestPublishedTrustMustMatchPrivateState(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("missing public file recovery changed CA")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err = Open(privateA, publicA, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca.Close()
+	afterInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(info, afterInfo) {
+		t.Fatal("matching public certificate was replaced")
+	}
+}
+
+func TestConcurrentCertificatePublication(t *testing.T) {
+	type material struct {
+		authority *Authority
+		pem       []byte
+	}
+	var candidates []material
+	for range 2 {
+		private, public := dirs(t)
+		a, err := Open(private, public, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.Close()
+		certificate, err := os.ReadFile(filepath.Join(public, config.CACertificateFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidates = append(candidates, material{a, certificate})
+	}
+	path := filepath.Join(t.TempDir(), config.CACertificateFile)
+	start := make(chan struct{})
+	type result struct {
+		candidate int
+		err       error
+	}
+	const publishers = 16
+	results := make(chan result, publishers)
+	for i := range publishers {
+		go func() {
+			<-start
+			candidate := i % len(candidates)
+			m := candidates[candidate]
+			results <- result{candidate, publishCertificate(path, m.pem, m.authority.Certificate)}
+		}()
+	}
+	close(start)
+	var completed []result
+	for range publishers {
+		completed = append(completed, <-results)
+	}
+	published, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range completed {
+		matches := bytes.Equal(published, candidates[r.candidate].pem)
+		if matches && r.err != nil {
+			t.Errorf("matching publisher failed: %v", r.err)
+		}
+		if !matches && (r.err == nil || !strings.Contains(r.err.Error(), "does not match private state")) {
+			t.Errorf("conflicting publisher did not reject the winner: %v", r.err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != config.CACertificateFile {
+		t.Fatal("publication left temporary files")
+	}
+}
+
+func TestDirectoryPermissions(t *testing.T) {
+	for _, target := range []string{"public", "private"} {
+		for _, mode := range []os.FileMode{0o700, 0o750, 0o755, 0o775, 0o757, 0o777} {
+			t.Run(fmt.Sprintf("%s/%o", target, mode), func(t *testing.T) {
+				private, public := dirs(t)
+				path := public
+				forbidden := os.FileMode(0o022)
+				if target == "private" {
+					path, forbidden = private, 0o077
+				}
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(path, mode); err != nil {
+					t.Fatal(err)
+				}
+				a, err := Open(private, public, time.Now())
+				if a != nil {
+					a.Close()
+				}
+				if mode&forbidden != 0 {
+					if err == nil || !strings.Contains(err.Error(), "unsafe directory permissions") {
+						t.Fatalf("unsafe directory accepted or failed for another reason: %v", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				info, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != mode {
+					t.Fatal("existing directory permissions were changed")
+				}
+			})
+		}
 	}
 }
