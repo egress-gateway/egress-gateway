@@ -73,6 +73,9 @@ func TestExistingInvalidStateNeverReplaced(t *testing.T) {
 			}
 			a.Close()
 			path := filepath.Join(private, config.CAStateFile)
+			if err = os.WriteFile(filepath.Join(private, ".gateway-interrupted"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
 			switch test {
 			case "corrupt":
 				if err = os.WriteFile(path, []byte("invalid"), 0o600); err != nil {
@@ -96,6 +99,61 @@ func TestExistingInvalidStateNeverReplaced(t *testing.T) {
 			after, _ := os.ReadFile(path)
 			if !bytes.Equal(before, after) {
 				t.Fatal("invalid state replaced")
+			}
+		})
+	}
+}
+
+func TestInterruptedInitialWriteCanRestart(t *testing.T) {
+	for _, partial := range []string{"", `{"certificate":`} {
+		t.Run(partial, func(t *testing.T) {
+			private, public := dirs(t)
+			if err := os.MkdirAll(private, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(private, ".gateway-interrupted"), []byte(partial), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			a, err := Open(private, public, time.Now())
+			if err != nil {
+				t.Fatalf("restart after interrupted initial write: %v", err)
+			}
+			original := a.Certificate.Raw
+			a.Close()
+			a, err = Open(private, public, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			if !bytes.Equal(original, a.Certificate.Raw) {
+				t.Fatal("restart replaced the recovered CA")
+			}
+		})
+	}
+}
+
+func TestMissingStateWithForeignEntriesRejected(t *testing.T) {
+	for _, kind := range []string{"file", "directory", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			private, public := dirs(t)
+			if err := os.MkdirAll(private, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			switch kind {
+			case "file":
+				err = os.WriteFile(filepath.Join(private, "foreign-state"), nil, 0o600)
+			case "directory":
+				err = os.Mkdir(filepath.Join(private, ".gateway-directory"), 0o700)
+			case "symlink":
+				err = os.Symlink("missing", filepath.Join(private, ".gateway-symlink"))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a, err := Open(private, public, time.Now()); err == nil {
+				a.Close()
+				t.Fatal("created a CA over unknown state")
 			}
 		})
 	}
