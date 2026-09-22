@@ -57,10 +57,20 @@ workload_id="$("${compose[@]}" ps -q workload)"
 if "${compose[@]}" exec -T --user 65534 workload test -r /var/lib/gateway/private/inspection-ca.json; then
   echo 'unprivileged workload can read signing state' >&2; exit 1
 fi
+# First prove the TCP probe works against the known-open application listener.
+probe_image=busybox:1.36.1
+docker run --rm --network "container:$workload_id" "$probe_image" \
+  nc -z -w 2 127.0.0.1 8080
 for port_in_pod in 8181 9191 15000; do
-  if docker run --rm --network "container:$workload_id" curlimages/curl:8.10.1 \
-    --noproxy '*' --silent --max-time 2 "http://127.0.0.1:$port_in_pod/"; then
+  if docker run --rm --network "container:$workload_id" "$probe_image" \
+    nc -z -w 2 127.0.0.1 "$port_in_pod"; then
     echo 'management interface exposed on shared network' >&2; exit 1
+  else
+    probe_status=$?
+    if [[ "$probe_status" != 1 ]]; then
+      echo "TCP isolation probe failed to execute: exit $probe_status" >&2
+      exit "$probe_status"
+    fi
   fi
 done
 ca_before="$("${compose[@]}" exec -T workload sha256sum /run/gateway/trust/inspection-ca.pem)"

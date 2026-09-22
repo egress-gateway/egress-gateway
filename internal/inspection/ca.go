@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/egress-gateway/egress-gateway/config"
@@ -73,9 +74,11 @@ func Open(privateDir, publicDir string, now time.Time) (_ *Authority, err error)
 			return nil, e
 		}
 		for _, entry := range entries {
-			if entry.Name() != ".lock" {
-				return nil, errors.New("CA state missing from a nonempty private directory; refusing replacement")
+			// A killed initial WriteAtomic can leave uncommitted temporary files.
+			if entry.Name() == ".lock" || (strings.HasPrefix(entry.Name(), ".gateway-") && entry.Type().IsRegular()) {
+				continue
 			}
+			return nil, errors.New("CA state missing from a nonempty private directory; refusing replacement")
 		}
 		s, err = generate(now)
 		if err != nil {
