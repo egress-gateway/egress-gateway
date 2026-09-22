@@ -42,11 +42,14 @@ func TestFailureCollectsBeforeOwnedCleanup(t *testing.T) {
 }
 func TestExistingStateNeverAcquiresOwnership(t *testing.T) {
 	root := t.TempDir()
-	e := New(Config{StateDir: root})
-	os.WriteFile(filepath.Join(root, "environment.json"), []byte("external"), 0o600)
+	e := New(Config{StateDir: root, Artifacts: filepath.Join(root, "artifacts")})
+	if err := os.WriteFile(filepath.Join(root, "environment.json"), []byte("external"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.operation = func(context.Context, string) error { t.Fatal("touched existing environment"); return nil }
-	if err := e.Run(t.Context(), false, func() error { t.Fatal("ran tests"); return nil }); err == nil {
-		t.Fatal("takeover accepted")
+	err := e.Run(t.Context(), false, func() error { t.Fatal("ran tests"); return nil })
+	if err == nil || err.Error() != "environment already retained; use test or down" {
+		t.Fatalf("retained behavior: %v", err)
 	}
 }
 func TestReuseDoesNotDelete(t *testing.T) {
