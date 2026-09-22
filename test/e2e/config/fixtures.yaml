@@ -118,7 +118,7 @@ items:
           - name: ISTIO_META_INTERCEPTION_MODE
             value: NONE
           - name: PROXY_CONFIG
-            value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+            value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
           image: "${GATEWAY_TEST_IMAGE}"
           imagePullPolicy: Never
           name: istio-proxy
@@ -368,7 +368,7 @@ items:
       - name: ISTIO_META_INTERCEPTION_MODE
         value: REDIRECT
       - name: PROXY_CONFIG
-        value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+        value: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
       image: "${GATEWAY_TEST_IMAGE}"
       imagePullPolicy: Never
       name: istio-proxy
