@@ -65,9 +65,15 @@ for port_in_pod in 8181 9191 15000; do
 done
 ca_before="$("${compose[@]}" exec -T workload sha256sum /run/gateway/trust/inspection-ca.pem)"
 "${compose[@]}" restart --timeout 10 workload
-"${compose[@]}" up --detach --wait --wait-timeout 45
+# Readiness must not recreate the container and replace its writable CA state.
+"${compose[@]}" up --no-recreate --detach --wait --wait-timeout 45
+[[ "$("${compose[@]}" ps -q workload)" == "$workload_id" ]] || {
+  echo 'restart check replaced the workload container' >&2; exit 1
+}
 ca_after="$("${compose[@]}" exec -T workload sha256sum /run/gateway/trust/inspection-ca.pem)"
-[[ "$ca_before" == "$ca_after" ]]
+[[ "$ca_before" == "$ca_after" ]] || {
+  echo 'inspection CA changed across a workload container restart' >&2; exit 1
+}
 
 
 # Invalid roles must fail before starting either long-running process.
