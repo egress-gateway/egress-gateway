@@ -8,6 +8,7 @@ require (
 	github.com/open-policy-agent/opa-envoy-plugin v1.20.2-envoy
 	golang.org/x/sys v0.47.0
 	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.12
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -113,7 +114,6 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
