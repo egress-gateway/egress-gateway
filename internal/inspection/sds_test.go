@@ -4,13 +4,17 @@ import (
 	"context"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	secret "github.com/envoyproxy/go-control-plane/envoy/service/secret/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -144,5 +148,59 @@ func TestSecretBatchCannotExceedCacheBound(t *testing.T) {
 		if removed == r.Resources[0].Name {
 			t.Fatal("resource was added and removed in one response")
 		}
+	}
+}
+
+func TestSDSAcceptsEnvoyNodeMetadataWithinBound(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := Open(filepath.Join(root, "private"), filepath.Join(root, "public"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ca.Close() })
+	secrets, err := NewSecretServer(ca, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := bufconn.Listen(1 << 20)
+	server := secrets.GRPCServer()
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
+	client, err := grpc.NewClient("passthrough:///private-sds", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.Close() })
+	for _, tc := range []struct {
+		name      string
+		nodeBytes int
+		want      codes.Code
+	}{
+		{"contrib-build-metadata", 80 << 10, codes.OK},
+		{"oversized-node", 256 << 10, codes.ResourceExhausted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			stream, err := secret.NewSecretDiscoveryServiceClient(client).DeltaSecrets(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Real contrib Node build metadata differs by architecture and can exceed 64 KiB.
+			err = stream.Send(&discovery.DeltaDiscoveryRequest{TypeUrl: secretType, ResourceNamesSubscribe: []string{"first.test"}, Node: &core.Node{UserAgentName: strings.Repeat("x", tc.nodeBytes)}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := stream.Recv()
+			if status.Code(err) != tc.want {
+				t.Fatalf("SDS result: %v; want %v", err, tc.want)
+			}
+			if tc.want == codes.OK && (len(response.GetResources()) != 1 || response.Resources[0].Name != "first.test") {
+				t.Fatal("first certificate was not delivered")
+			}
+		})
 	}
 }

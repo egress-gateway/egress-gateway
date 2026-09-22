@@ -24,7 +24,9 @@ The HTTPS fixture uses a three-second TLS handshake deadline, 64 concurrent
 connections, 64 accepted connections per second, 64 KiB complete request bodies,
 and bounded DNS/authorization queues. SDS permits 128 active subscriptions so the
 65th request can trigger eviction instead of deadlocking a full cache. Each
-subscription has bounded updates and name counts. Envoy's heap overload monitor
+subscription has bounded updates and name counts. SDS messages have a 256 KiB
+receive limit to accommodate the official contrib binary's Node build metadata;
+this is independent of the 64 KiB HTTP request-body limit. Envoy's heap overload monitor
 stops accepting connections at 48 MiB of accounted heap (64 MiB monitor budget);
 the test container additionally has a 256 MiB memory limit. The supplied Istio
 bootstrap overlay applies the same connection and heap admission limits.
