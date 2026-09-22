@@ -12,10 +12,12 @@ services:
       GATEWAY_ROLE: egress
       GATEWAY_PROXY_MODE: standalone
       ENVOY_CONFIG: /example/envoy.yaml
+      OPA_CONFIG: /example/opa.yaml
     volumes:
       - ./egress-envoy.yaml:/example/envoy.yaml:ro
       - ./policies/egress.rego:/example/policy.rego:ro
-    command: [--set, plugins.envoy_ext_authz_grpc.path=fixture/egress/decision, /example/policy.rego]
+      - ./egress-opa.yaml:/example/opa.yaml:ro
+    command: [--policy, /example/policy.rego]
     depends_on:
       upstream:
         condition: service_started
@@ -28,10 +30,12 @@ services:
       GATEWAY_ROLE: workload
       GATEWAY_PROXY_MODE: standalone
       ENVOY_CONFIG: /example/envoy.yaml
+      OPA_CONFIG: /example/opa.yaml
     volumes:
       - ./workload-envoy.yaml:/example/envoy.yaml:ro
       - ./policies/workload.rego:/example/policy.rego:ro
-    command: [--set, plugins.envoy_ext_authz_grpc.path=fixture/workload/decision, /example/policy.rego]
+      - ./workload-opa.yaml:/example/opa.yaml:ro
+    command: [--policy, /example/policy.rego]
     ports:
       - '127.0.0.1:${GATEWAY_PORT:-18080}:8080'
     depends_on:

@@ -2,7 +2,13 @@
 
 A data plane runtime that packages Envoy, the Istio agent, and an extensible OPA into one image, configured to run as either a Workload Proxy or an Egress Gateway.
 
-This repository is a buildable scaffold with a runnable local example. It provides a custom OPA entry point, the official Envoy authorization plugin, startup for both roles, component tests, and CI. The full GatewayProfile contract, ServiceAccount identity binding, and dynamic policy delivery are not yet implemented.
+The daemon embeds the official OPA runtime and Envoy plugin, supervises Envoy or
+pilot-agent, and supplies inspection certificates over private SDS. HTTPS is
+terminated at workload Envoy, authorized independently at both roles, and forwarded
+over verified origin TLS. The image combines Istio 1.31.0 pilot-agent with the
+official Envoy contrib 1.39.0 distribution; see the [capability and resource
+boundary](docs/https-capability.md). GatewayProfile binding and dynamic policy
+delivery remain separate work.
 
 ## Getting started
 
@@ -30,7 +36,9 @@ The request path is `Client → Workload Envoy/OPA → Egress Envoy/OPA → Test
 ## Repository layout
 
 ```text
-cmd/gateway-opa/        Custom OPA executable entry point
+cmd/gateway-daemon/     Embedded OPA and proxy supervision
+config/                Public startup and volume contract
+cmd/gateway-opa/        Development-only OPA integration-test utility
 internal/opa/           Registration of upstream and future project plugins
 internal/plugins/       Extension boundary for future project plugins
 internal/request/       Request adaptation boundary
@@ -46,7 +54,9 @@ examples/local/        Reproducible local request path and test-only policies
 docs/                  Architecture, extensions, configuration, and compatibility
 ```
 
-`internal/request`, `internal/identity`, and `internal/artifacts` currently document ownership boundaries only. They contain no placeholder services or unimplemented Go APIs. Code will be added as the corresponding features are defined.
+`internal/request` supplies the private HTTPS target guard. Trusted identity uses
+the official OPA plugin input from verified TLS; no public policy DTO is introduced.
+`internal/identity` and `internal/artifacts` retain ownership documentation.
 
 ## Shared policy library
 
@@ -62,4 +72,4 @@ That library has no usable version yet, so this scaffold adds no placeholder `re
 - [Component versions and validation scope](docs/compatibility.md)
 - [Contributing](CONTRIBUTING.md)
 
-The full Kubernetes / Istio development environment, Pod injection, and end-to-end acceptance tests belong in [`egress-gateway-controller`](https://github.com/egress-gateway/egress-gateway-controller). Local image tests in this repository are not cluster E2E tests.
+The gateway repository owns its minimal kind/Istio connectivity fixture. Shared network installation and enrollment belong in networking; admission belongs in controller. Local image tests do not establish real mesh identity or network fail-closed behavior.

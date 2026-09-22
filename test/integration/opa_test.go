@@ -81,6 +81,21 @@ func TestMissingPolicyDoesNotAllow(t *testing.T) {
 	}
 }
 
+func TestInvalidDecisionDoesNotAllow(t *testing.T) {
+	api, client := startOPA(t)
+	for _, decision := range []string{`"allow"`, `42`, `{"allowed":"true"}`, `{"body":"missing allowed"}`} {
+		t.Run(decision, func(t *testing.T) {
+			putPolicy(t, api, "package envoy.authz\nimport rego.v1\nallow := "+decision+"\n")
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			response, err := client.Check(ctx, &authv3.CheckRequest{Attributes: &authv3.AttributeContext{Request: &authv3.AttributeContext_Request{Http: &authv3.AttributeContext_HttpRequest{Method: "GET", Path: "/allowed"}}}})
+			if err == nil && (response.GetStatus() == nil || response.GetStatus().GetCode() == 0) {
+				t.Fatal("invalid policy decision allowed request")
+			}
+		})
+	}
+}
+
 // startOPA starts an isolated gateway OPA process and waits for it to become healthy.
 func startOPA(t *testing.T) (string, authv3.AuthorizationClient) {
 	t.Helper()
