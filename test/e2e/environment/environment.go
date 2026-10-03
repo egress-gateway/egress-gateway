@@ -86,7 +86,7 @@ func (e *Environment) Up(ctx context.Context) (err error) {
 			err = errors.Join(err, e.Down())
 		}
 	}()
-	for _, phase := range []string{"cluster-up", "image-load", "mesh-install", "fixtures-deploy"} {
+	for _, phase := range []string{"cluster-up", "foundation-install", "image-load", "mesh-install", "fixtures-deploy"} {
 		if err = e.operation(ctx, phase); err != nil {
 			return err
 		}
@@ -148,4 +148,10 @@ func (e *Environment) Kubectl(ctx context.Context, args ...string) ([]byte, erro
 	base := []string{"--kubeconfig", e.Config.Kubeconfig, "--context", "kind-" + e.Config.Cluster, "--request-timeout=30s"}
 	cmd := exec.CommandContext(ctx, "kubectl", append(base, args...)...)
 	return cmd.CombinedOutput()
+}
+
+// Operation executes one complete fixture operation with the owned environment's
+// explicit inputs. Scenario assertions remain in the suite.
+func (e *Environment) Operation(ctx context.Context, phase string) error {
+	return e.operation(ctx, phase)
 }

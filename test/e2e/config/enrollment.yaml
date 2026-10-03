@@ -1,0 +1,58 @@
+# Trusted static consumer inputs. All network exceptions apply to the whole Pod.
+workload:
+  role: workload
+  image: ${GATEWAY_TEST_IMAGE}
+  imagePullPolicy: Never
+  trustImage: ${CURL_TEST_IMAGE}
+  trustPath: /cacert.pem
+  trustMounts:
+    curl: /cacert.pem
+  discoveryAddress: istiod.istio-system.svc:15012
+  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+  proxyEnv:
+  - name: OTEL_SERVICE_NAME
+    value: opa-env-boundary
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.gateway-test.svc.cluster.local:4318
+  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+    value: http/protobuf
+  network:
+    namespace: gateway-test
+    binding: gateway-workload
+    forward:
+    - peer: {namespace: gateway-test, podLabels: {app: egress}}
+      ports: [8080, 8443]
+    - peer: {namespace: istio-system, podLabels: {app: istiod}}
+      ports: [15012]
+    - peer: {namespace: gateway-test, podLabels: {app: otel-collector}}
+      ports: [4317, 4318]
+    dns:
+    - {namespace: kube-system, podLabels: {k8s-app: kube-dns}}
+egress:
+  role: egress
+  image: ${GATEWAY_TEST_IMAGE}
+  imagePullPolicy: Never
+  originTrustConfigMap: origin-trust
+  discoveryAddress: istiod.istio-system.svc:15012
+  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+  proxyEnv:
+  - name: OTEL_SERVICE_NAME
+    value: opa-env-boundary
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.gateway-test.svc.cluster.local:4318
+  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+    value: http/protobuf
+  network:
+    namespace: gateway-test
+    binding: gateway-egress
+    forward:
+    - peer: {namespace: gateway-origin, podLabels: {app: origin}}
+      ports: [8080]
+    - peer: {namespace: gateway-origin, podLabels: {app: origin-https}}
+      ports: [8443]
+    - peer: {namespace: istio-system, podLabels: {app: istiod}}
+      ports: [15012]
+    - peer: {namespace: gateway-test, podLabels: {app: otel-collector}}
+      ports: [4317, 4318]
+    dns:
+    - {namespace: kube-system, podLabels: {k8s-app: kube-dns}}

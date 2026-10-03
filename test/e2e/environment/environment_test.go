@@ -10,7 +10,7 @@ import (
 )
 
 func TestFailureCollectsBeforeOwnedCleanup(t *testing.T) {
-	for _, failed := range []string{"cluster-up", "image-load", "mesh-install", "fixtures-deploy", "tests"} {
+	for _, failed := range []string{"cluster-up", "foundation-install", "image-load", "mesh-install", "fixtures-deploy", "tests"} {
 		t.Run(failed, func(t *testing.T) {
 			root := t.TempDir()
 			e := New(Config{StateDir: filepath.Join(root, "state"), Artifacts: filepath.Join(root, "artifacts")})

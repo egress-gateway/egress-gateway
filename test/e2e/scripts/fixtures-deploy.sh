@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/common.sh"
-require kubectl envsubst openssl
+require kubectl envsubst openssl go
 verify_owner
 # Fixture origin credentials stay in private state and are never diagnostics.
 for ns in gateway-test gateway-origin; do
@@ -23,7 +23,9 @@ export GATEWAY_TEST_IMAGE="$image" ORIGIN_TEST_IMAGE="$image-origin" CURL_TEST_I
 envsubst '${OTEL_COLLECTOR_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/tracing.yaml" > "$artifacts/rendered-tracing.yaml"
 k apply -f "$artifacts/rendered-tracing.yaml"
 k rollout status deployment/otel-collector -n gateway-test --timeout=180s
-envsubst '${GATEWAY_TEST_IMAGE} ${ORIGIN_TEST_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/fixtures.yaml" > "$artifacts/rendered-fixtures.yaml"
+envsubst '${GATEWAY_TEST_IMAGE} ${ORIGIN_TEST_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/fixtures.yaml" > "$state_dir/business-fixtures.yaml"
+envsubst '${GATEWAY_TEST_IMAGE} ${CURL_TEST_IMAGE}' < "$config_dir/enrollment.yaml" > "$state_dir/enrollment.yaml"
+(cd "$root" && go run ./cmd/gateway-e2e-compose --input "$state_dir/business-fixtures.yaml" --options "$state_dir/enrollment.yaml") > "$artifacts/rendered-fixtures.yaml"
 k apply -f "$artifacts/rendered-fixtures.yaml"
 k apply -f "$config_dir/https.yaml"
 k rollout status deployment/origin-https -n gateway-origin --timeout=180s

@@ -60,6 +60,8 @@ func Run(ctx context.Context, e *environment.Environment, tags string) error {
 		sc.Step(`^the proxy hop uses live Istio mutual TLS$`, s.mutualTLS)
 		sc.Step(`^the Collector receives a workload-rooted trace linking both proxies$`, s.tracing)
 		sc.Step(`^Istio telemetry records successful proxy traffic$`, s.telemetry)
+		sc.Step(`^the foundation and Istio CNI agents have restarted$`, func() error { return s.env.Operation(s.ctx, "foundation-restart") })
+		sc.Step(`^Gateway preparation preserves IPv6 closure and direct network confinement$`, s.foundation)
 		sc.Step(`^the image accepts the on-demand certificate configuration$`, s.capability)
 	}}
 	if code := suite.Run(); code != 0 {

@@ -38,6 +38,7 @@ The request path is `Client → Workload Envoy/OPA → Egress Envoy/OPA → Test
 ```text
 cmd/gateway-daemon/     Embedded OPA and proxy supervision
 config/                Public startup and volume contract
+enrollment/            Pure Gateway Kubernetes composition using networking
 cmd/gateway-opa/        Development-only OPA integration-test utility
 internal/opa/           Registration of upstream and future project plugins
 internal/plugins/       Extension boundary for future project plugins
@@ -72,4 +73,4 @@ That library has no usable version yet, so this scaffold adds no placeholder `re
 - [Component versions and validation scope](docs/compatibility.md)
 - [Contributing](CONTRIBUTING.md)
 
-The gateway repository owns its minimal kind/Istio connectivity fixture. Shared network installation and enrollment belong in networking; admission belongs in controller. Local image tests do not establish real mesh identity or network fail-closed behavior.
+Gateway owns its kind/Istio integration fixture and [trusted composition boundary](docs/enrollment.md). Calico installation and platform permission validation belong in networking; admission and resource lifecycle belong in the controller or static consumer. Local image tests do not establish real mesh identity or network confinement.

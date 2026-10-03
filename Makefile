@@ -11,7 +11,7 @@ fmt:
 	$(GO) fmt ./...
 
 fmt-check:
-	@test -z "$$(gofmt -l $$(find cmd config internal test examples -name '*.go'))" || (echo 'Run make fmt'; exit 1)
+	@test -z "$$(gofmt -l $$(find cmd config enrollment internal test examples -name '*.go'))" || (echo 'Run make fmt'; exit 1)
 
 vet:
 	$(GO) vet ./...

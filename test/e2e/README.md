@@ -1,4 +1,4 @@
-# Minimal gateway connectivity BDD fixture
+# Gateway foundation and connectivity BDD fixture
 
 This suite covers transparent HTTP and HTTPS through both proxy roles, startup
 inspection trust, real Istiod identities and independently verified origin TLS.
@@ -50,20 +50,23 @@ bash test/e2e/scripts/mesh-install.sh \
   --config-dir "$PWD/test/e2e/config" --artifacts "$PWD/.e2e/artifacts"
 ```
 
-`cluster-up`, `image-load`, `mesh-install`, `fixtures-deploy`, `verify`, `diagnostics`
+`cluster-up`, `foundation-install`, `image-load`, `mesh-install`, `fixtures-deploy`, `verify`, `diagnostics`
 and `cluster-down` own their operation prerequisites/readiness and return nonzero
 on failure. The node ID receipt is a declared file, not parsed human log output.
 Go owns sequencing and cleanup decisions. YAML owns kind/Helm/deployment input.
-These are gateway test fixtures; networking can replace this installation layer
-later without replacing the behavioral feature/step layer.
+`foundation-install` and `foundation-check` call scripts from the same immutable
+networking Go module recorded in `go.mod`; downloaded installer cache is explicitly
+placed in private fixture state, never in the read-only module artifact.
 
 ## Topology and evidence
 
-Default kind networking is retained. Istio CNI performs sidecar interception; no
-isolation CNI or NetworkPolicy guarantee is implied. A manually declared native
-sidecar uses our workload image; a root volume-preparation init sets private
-permissions, then the proxy startup probe gates base-store copying and bundle
-preparation. The curl application sees only its final read-only trust bundle.
+The fresh single-node IPv4 kind cluster disables its default CNI. The networking
+installer configures Calico and pre-business IPv6 disablement before Gateway
+installs Istio CNI. Its foundation check runs after composition, agent restarts and
+retained reuse. The static Go consumer calls `enrollment.ComposePod` for both
+roles and applies generated NetworkPolicies before Pods. Root volume preparation
+and the explicitly authorized management initializer precede the restricted native
+sidecar; proxy readiness gates base-store copying and bundle preparation. The curl application sees only its final read-only trust bundle.
 The egress deployment uses the same gateway image. A sidecar-free controlled origin
 receives HTTP or independently verified HTTPS after the two proxies.
 
@@ -80,8 +83,20 @@ ends of the mTLS hop, and active public mesh certificate metadata. Certificates
 are obtained by the real pilot-agent from the dedicated Istiod; no static workload
 identity certificates are mounted.
 
-Full network fail-closed, UDP/QUIC prevention, failure isolation, controller
-admission, shared enrollment and production installation remain later milestones.
+The foundation scenarios observe the actual initializer, IPv6 state, captured
+traffic rules and source-endpoint Calico DROP counters against a healthy controlled
+origin. Direct probes from the resident proxy UID bypass transparent capture and
+prove Pod-wide policy independently of Envoy. Both normal and post-CNI-restart
+connectivity are checked. This does not certify the full startup/fault and protocol
+matrix, two-stage Kubernetes authorization, controller admission or production
+installation; those remain separate acceptance.
+
+`config/enrollment.yaml` declares exact Pod peers and ports: workload to egress
+8080/8443, both roles to Istiod 15012 and telemetry 4317/4318, and egress to fixture
+origin listeners 8080/8443. Explicit kube-dns peers allow TCP/UDP 53. All exceptions
+are Pod-wide, including business traffic to control endpoints, and do not establish
+identity or authorization inside an allowed endpoint. No Kubernetes API permission
+or non-DNS UDP permission is implicit.
 
 ## HTTPS fixture boundary
 

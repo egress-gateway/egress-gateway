@@ -12,5 +12,5 @@ receipt() {
   exit "$rc"
 }
 trap receipt EXIT
-kind create cluster --name "$cluster" --image "$KIND_IMAGE" --config "$config_dir/kind.yaml" --kubeconfig "$kubeconfig" --wait 120s --retain
-k wait --for=condition=Ready node --all --timeout=120s
+kind create cluster --name "$cluster" --image "$KIND_IMAGE" --config "$config_dir/kind.yaml" --kubeconfig "$kubeconfig" --wait 0s --retain
+k get --raw /readyz >/dev/null

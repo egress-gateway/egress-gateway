@@ -12,3 +12,4 @@ actual="$(k get pod workload -n gateway-test -o jsonpath='{.spec.initContainers[
 actual="$(k get deployment egress -n gateway-test -o jsonpath='{.spec.template.spec.containers[0].image}')"
 [[ "$actual" == "$image" ]] || { echo 'retained egress image mismatch' >&2; exit 2; }
 [[ "$(docker image inspect --format '{{.Id}}' "$image")" == "$(cat "$artifacts/gateway-image-id.txt")" ]] || { echo 'local image changed since setup; recreate the environment' >&2; exit 2; }
+"$BASH" "$root/test/e2e/scripts/foundation-check.sh" --root "$root" --cluster "$cluster" --kubeconfig "$kubeconfig" --image "$image" --config-dir "$config_dir" --artifacts "$artifacts" --state-dir "$state_dir"
