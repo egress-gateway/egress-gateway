@@ -57,13 +57,13 @@ docs/                  Architecture, extensions, configuration, and compatibilit
 
 `internal/request` supplies the private HTTP/HTTPS target guard. Trusted identity uses
 the official OPA plugin input from verified TLS; no public policy DTO is introduced.
-`internal/identity` and `internal/artifacts` retain ownership documentation.
+`internal/adapter` owns normalization and payload decoding; `internal/artifacts` verifies the static bundle and descriptors.
 
 ## Shared policy library
 
-Public policy types, normalized inputs and decisions, baseline Rego, and shared semantic fixtures belong in [`egress-gateway-policy`](https://github.com/egress-gateway/egress-gateway-policy). Both this repository and the controller will depend on it.
+Public policy types, normalized inputs and decisions, baseline Rego, and shared semantic fixtures belong in [`egress-gateway-policy`](https://github.com/egress-gateway/egress-gateway-policy). Gateway consumes its pinned public module; the controller owns future Kubernetes mapping and delivery.
 
-That library has no usable version yet, so this scaffold adds no placeholder `require`, local `replace`, or duplicated public types. The example `fixture.*` policies only verify process connectivity; they do not define the future shared policy contract. See the [shared dependency boundary](docs/policy-contract.md).
+Set `GATEWAY_WORKLOAD_CONFIG` to a trusted static artifact configuration to enforce library-built bundles at both roles. Gateway preserves repeated request values, strictly decodes JSON and bounded unary gRPC/Protobuf, and retains independent egress peer admission. The example `fixture.*` policies remain test-only. See the [shared integration contract](docs/policy-contract.md).
 
 ## Documentation
 

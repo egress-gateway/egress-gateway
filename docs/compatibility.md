@@ -8,13 +8,13 @@
 | OPA-Envoy plugin | v1.20.2-envoy; its go.mod depends on OPA v1.20.2 |
 | Istio proxy image | istio/proxyv2:1.31.0, retaining pilot-agent |
 | Envoy binary | Official envoyproxy/envoy:contrib-v1.39.0, digest pinned in image/Dockerfile |
-| Shared policy library | No usable version yet |
+| Shared policy library | `v0.0.0-20261003102545-355f8aa1aa88` |
 
 Pinned versions do not establish full mesh compatibility. CI Go checks validate the custom executable; image smoke tests validate the standalone local request path. Record the host architecture in pull request validation results as well.
 
 The image uses the standard upstream proxyv2 distribution, which includes bash and curl. A distroless variant lacking these tools is not a drop-in replacement.
 
-Not yet validated or implemented: Kubernetes admission, Istio injection, automatic mTLS rotation, ServiceAccount/Profile isolation, prevention of real egress bypass, the future shared policy contract, and dynamic policy activation across instances.
+Not yet validated or implemented: Kubernetes admission, Istio injection, automatic mTLS rotation, ServiceAccount/Profile isolation, prevention of real egress bypass, shared-policy real-mesh acceptance (tracked by #13), and dynamic policy activation across instances.
 
 The component suite covers HTTPS first handshake, certificate reuse/eviction, concurrent
 requests, independent full-body decisions, target binding, verified mesh-style peer

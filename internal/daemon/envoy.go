@@ -60,6 +60,11 @@ func prepareEnvoy(c config.Config) (string, error) {
 				httpFilters, _ := hcm["http_filters"].([]any)
 				for _, item := range httpFilters {
 					filter, _ := item.(map[string]any)
+					if c.WorkloadConfig != "" && filter["name"] == "envoy.filters.http.ext_authz" {
+						cfg, _ := filter["typed_config"].(map[string]any)
+						cfg["encode_raw_headers"] = true
+						cfg["with_request_body"] = map[string]any{"max_request_bytes": 65536, "allow_partial_message": false, "pack_as_bytes": true}
+					}
 					if filter["name"] == "gateway.request" || filter["name"] == "gateway.dispatch" {
 						filter["typed_config"] = request.Filter(c.Role)
 					}

@@ -40,6 +40,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/egress-gateway/egress-gateway-networking v0.0.0-20261003033936-3eb458d91ad0 h1:GnzMBeRGLEBcZpaucWowO17PXkpJN+9lgU0MidWd65Y=
 github.com/egress-gateway/egress-gateway-networking v0.0.0-20261003033936-3eb458d91ad0/go.mod h1:jRsDTWhcr+nBn5+0vJlsyUgpa6ar3zMAM1rNyAmyrWk=
+github.com/egress-gateway/egress-gateway-policy v0.0.0-20261003102545-355f8aa1aa88 h1:F24AI4cLD9Az0ELXQbhN4fKmbkdxUd+tpsY3olKBbSY=
+github.com/egress-gateway/egress-gateway-policy v0.0.0-20261003102545-355f8aa1aa88/go.mod h1:WLMnVVHcKSMnyWBaMBRgPeapxRsnsmZWbqDn7HKYZ6I=
 github.com/envoyproxy/go-control-plane/envoy v1.39.0 h1:1uwRDYPYG8BIBU9Mj1sUAebNmlM6beu/ZKKweSLDxk8=
 github.com/envoyproxy/go-control-plane/envoy v1.39.0/go.mod h1:5e4ylfTZO723MEEFsCpSW4ZEBWR8mwkEyXfwJBTCZ9c=
 github.com/envoyproxy/protoc-gen-validate v1.3.3 h1:MVQghNeW+LZcmXe7SY1V36Z+WFMDjpqGAGacLe2T0ds=

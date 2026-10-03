@@ -46,6 +46,7 @@ type Config struct {
 	Role             Role
 	ProxyMode        ProxyMode
 	OPAConfig        string
+	WorkloadConfig   string
 	EnvoyConfig      string
 	StateDir         string
 	PublicDir        string
@@ -80,7 +81,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	}{
 		{EnvIdentityProvider, &c.IdentityProvider, c.IdentityProvider},
 		{EnvOPAConfig, &c.OPAConfig, "/etc/gateway/opa/" + role + ".yaml"},
-		{EnvEnvoyConfig, &c.EnvoyConfig, ""}, {EnvStateDir, &c.StateDir, c.StateDir},
+		{EnvWorkloadConfig, &c.WorkloadConfig, ""}, {EnvEnvoyConfig, &c.EnvoyConfig, ""}, {EnvStateDir, &c.StateDir, c.StateDir},
 		{EnvPublicDir, &c.PublicDir, c.PublicDir}, {EnvRuntimeDir, &c.RuntimeDir, c.RuntimeDir},
 	} {
 		*item.target, err = value(lookup, item.name, item.fallback)
@@ -119,6 +120,9 @@ func (c Config) Validate() error {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
 			return fmt.Errorf("expected a clean absolute non-root path: %q", path)
 		}
+	}
+	if c.WorkloadConfig != "" && !artifactPath(c.WorkloadConfig) {
+		return fmt.Errorf("%s must be a clean absolute file path", EnvWorkloadConfig)
 	}
 	if c.ProxyMode == Standalone && c.EnvoyConfig == "" {
 		return fmt.Errorf("standalone mode requires %s", EnvEnvoyConfig)

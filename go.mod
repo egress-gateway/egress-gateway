@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/cucumber/godog v0.16.0
 	github.com/egress-gateway/egress-gateway-networking v0.0.0-20261003033936-3eb458d91ad0
+	github.com/egress-gateway/egress-gateway-policy v0.0.0-20261003102545-355f8aa1aa88
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0
 	github.com/google/uuid v1.6.0
 	github.com/open-policy-agent/opa v1.20.2

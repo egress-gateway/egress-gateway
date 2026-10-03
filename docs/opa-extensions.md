@@ -17,3 +17,8 @@ Ordinary parsing functions need not be plugins. Use Rego builtins only for capab
 Identity mapping, the Wiki's full HTTP/JSON and gRPC/Protobuf normalization contracts, artifact digest adaptation, and cross-component activation feedback are not yet implemented. Their directories document ownership, not existing functionality.
 
 References: [OPA runtime extensions](https://www.openpolicyagent.org/docs/extensions#custom-plugins-for-opa-runtime), [OPA-Envoy](https://www.openpolicyagent.org/docs/envoy).
+
+Static shared-policy mode registers two private pure built-ins before runtime
+creation: `gateway.inspect` converts trusted request facts and bounded payloads;
+`gateway.accepts` validates the public decision. Rule semantics remain in shared
+Rego. The development-only OPA CLI does not load static daemon configuration.
