@@ -240,11 +240,28 @@ func captureCount(text string) (uint64, error) {
 	return 0, errors.New("missing executed Istio TCP capture rule")
 }
 func blackholeCount(text string) (uint64, error) {
+	// Istio defers traffic-stat creation until the first connection. The eager
+	// panic counter also records selection of the empty BlackHole cluster.
+	var count uint64
+	var counted, empty bool
 	for line := range strings.SplitSeq(text, "\n") {
 		name, value, ok := strings.Cut(line, ": ")
-		if ok && name == "cluster.BlackHoleCluster;.upstream_cx_none_healthy" {
-			return strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+		if !ok || (name != "cluster.BlackHoleCluster;.lb_healthy_panic" && name != "cluster.BlackHoleCluster;.membership_total") {
+			continue
+		}
+		n, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		switch name {
+		case "cluster.BlackHoleCluster;.lb_healthy_panic":
+			count, counted = n, true
+		case "cluster.BlackHoleCluster;.membership_total":
+			empty = n == 0
 		}
 	}
-	return 0, errors.New("missing Envoy BlackHoleCluster rejection counter")
+	if !counted || !empty {
+		return 0, errors.New("missing empty Envoy BlackHoleCluster rejection counter")
+	}
+	return count, nil
 }
