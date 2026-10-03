@@ -8,14 +8,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egress-gateway/egress-gateway/test/e2e/environment"
 	core "k8s.io/api/core/v1"
 )
 
 func (s *scenario) foundation() error {
-	if err := s.env.Operation(s.ctx, "foundation-observe"); err != nil {
+	observation := s.env.Config
+	observation.Artifacts = filepath.Join(observation.Artifacts, "cases", s.id)
+	if err := environment.New(observation).Operation(s.ctx, "foundation-observe"); err != nil {
 		return err
 	}
-	dir := filepath.Join(s.env.Config.Artifacts, "foundation")
+	dir := filepath.Join(observation.Artifacts, "foundation")
 	read := func(name string) (string, error) {
 		raw, err := os.ReadFile(filepath.Join(dir, name))
 		return string(raw), err
