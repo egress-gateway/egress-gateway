@@ -93,6 +93,12 @@ func compose(raw, opts []byte) ([]byte, error) {
 			return nil, fmt.Errorf("%s: %w", business.Name, err)
 		}
 		policies = append(policies, network.NetworkPolicy{TypeMeta: meta.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}, ObjectMeta: meta.ObjectMeta{Name: "gateway-" + business.Name, Namespace: business.Namespace}, Spec: policy.Spec})
+		shared, err := sharedArtifacts(o.Role)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, shared)
+		attachShared(pod, shared)
 		if identity.Kind == "Deployment" {
 			deployment.Spec.Template.Spec = pod.Spec
 			deployment.Spec.Template.Labels = pod.Labels

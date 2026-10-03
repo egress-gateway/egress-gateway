@@ -110,3 +110,12 @@ HTTP/HTTPS and gRPC, verified TLS, independent egress decisions and origin
 non-delivery. Existing fixture policies remain for mutation/fault injection and
 legacy regression. Shared-policy real-mesh acceptance is delivered by #13; image
 proof alone does not establish that result.
+
+## Real mesh fixture
+
+The Gateway-owned kind fixture stages real shared bundles and descriptors through
+its private trusted consumer. Both roles enforce them over real Istio mTLS;
+HTTP/2 is preserved through the inspection, mesh and verified origin TLS hops.
+See the [fixture matrix](../test/e2e/README.md#shared-http-and-grpc-policy) for
+selection, invalid-input, startup-dependency, empty-policy and peer-admission
+proof. Explicit mutation fault cases temporarily select fixture-only rules.

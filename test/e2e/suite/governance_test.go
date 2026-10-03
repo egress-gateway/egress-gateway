@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	auth "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"github.com/open-policy-agent/opa-envoy-plugin/envoyauth"
 	"github.com/open-policy-agent/opa/v1/rego"
 )
 
-func TestFixtureIndependentBodyDecisions(t *testing.T) {
+func TestMutationFixtureDecisions(t *testing.T) {
 	for _, tc := range []struct {
 		role, action, principal, scheme string
 		allowed                         bool
@@ -17,6 +20,8 @@ func TestFixtureIndependentBodyDecisions(t *testing.T) {
 		{"workload", "safe", "", "https", true},
 		{"egress", "safe", "spiffe://cluster.local/ns/gateway-test/sa/workload", "https", true},
 		{"workload", "egress-deny", "", "https", true},
+		{"workload", "workload-mutate", "", "https", true},
+		{"egress", "egress-mutate", "spiffe://cluster.local/ns/gateway-test/sa/workload", "https", true},
 		{"egress", "egress-deny", "spiffe://cluster.local/ns/gateway-test/sa/workload", "https", false},
 		{"workload", "workload-deny", "", "https", false},
 		{"egress", "safe", "spiffe://attacker/ns/gateway-test/sa/workload", "https", false},
@@ -28,7 +33,16 @@ func TestFixtureIndependentBodyDecisions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			input := map[string]any{"source_principal": tc.principal, "parsed_body": map[string]any{"action": tc.action}, "truncated_body": false, "attributes": map[string]any{"request": map[string]any{"http": map[string]any{"method": "POST", "scheme": tc.scheme, "path": "/body", "headers": map[string]any{"content-type": "application/json", "x-workload-allowed": "true", "x-workload-identity": "spiffe://cluster.local/ns/gateway-test/sa/workload"}}}}}
+			request := &auth.CheckRequest{Attributes: &auth.AttributeContext{
+				Source: &auth.AttributeContext_Peer{Principal: tc.principal},
+				Request: &auth.AttributeContext_Request{Http: &auth.AttributeContext_HttpRequest{
+					RawBody: []byte(`{"action":"` + tc.action + `"}`), Method: "POST", Scheme: tc.scheme, Path: "/body",
+				}},
+			}}
+			input, err := envoyauth.RequestToInput(request, nil, nil, true)
+			if err != nil {
+				t.Fatal(err)
+			}
 			results, err := rego.New(rego.Query("data.envoy.authz.allow"), rego.Module(tc.role+".rego", string(policy)), rego.Input(input)).Eval(t.Context())
 			if err != nil {
 				t.Fatal(err)
@@ -39,6 +53,12 @@ func TestFixtureIndependentBodyDecisions(t *testing.T) {
 			decision, ok := results[0].Expressions[0].Value.(map[string]any)
 			if !ok || decision["allowed"] != tc.allowed {
 				t.Fatalf("decision: %#v", results)
+			}
+			if strings.HasSuffix(tc.action, "-mutate") {
+				mutation, ok := decision["query_parameters_to_set"].(map[string]any)
+				if !ok || mutation["changed"] != "true" {
+					t.Fatal("mutation response missing")
+				}
 			}
 		})
 	}

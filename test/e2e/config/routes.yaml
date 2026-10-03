@@ -12,6 +12,12 @@ items:
     servers:
     - hosts:
       - origin.gateway-origin.svc.cluster.local
+      - blocked-workload.gateway-origin.svc.cluster.local
+      - child.blocked-workload.gateway-origin.svc.cluster.local
+      - notblocked-workload.gateway-origin.svc.cluster.local
+      - blocked-egress.gateway-origin.svc.cluster.local
+      - child.blocked-egress.gateway-origin.svc.cluster.local
+      - notblocked-egress.gateway-origin.svc.cluster.local
       port:
         name: https-mesh
         number: 8080
@@ -34,9 +40,15 @@ items:
   spec:
     host: egress.gateway-test.svc.cluster.local
     trafficPolicy:
+      connectionPool:
+        http:
+          useClientProtocol: true
       portLevelSettings:
       - port:
           number: 8443
+        connectionPool:
+          http:
+            useClientProtocol: true
         tls:
           mode: ISTIO_MUTUAL
           sni: inspection.mesh
@@ -58,6 +70,12 @@ items:
     - egress
     hosts:
     - origin.gateway-origin.svc.cluster.local
+    - blocked-workload.gateway-origin.svc.cluster.local
+    - child.blocked-workload.gateway-origin.svc.cluster.local
+    - notblocked-workload.gateway-origin.svc.cluster.local
+    - blocked-egress.gateway-origin.svc.cluster.local
+    - child.blocked-egress.gateway-origin.svc.cluster.local
+    - notblocked-egress.gateway-origin.svc.cluster.local
     http:
     - match:
       - gateways:
@@ -132,6 +150,28 @@ items:
     - hosts:
       - gateway-test/*
       - gateway-origin/origin.gateway-origin.svc.cluster.local
+      - gateway-origin/blocked-workload.gateway-origin.svc.cluster.local
+      - gateway-origin/child.blocked-workload.gateway-origin.svc.cluster.local
+      - gateway-origin/notblocked-workload.gateway-origin.svc.cluster.local
+      - gateway-origin/blocked-egress.gateway-origin.svc.cluster.local
+      - gateway-origin/child.blocked-egress.gateway-origin.svc.cluster.local
+      - gateway-origin/notblocked-egress.gateway-origin.svc.cluster.local
     workloadSelector:
       labels:
         app: workload
+
+- apiVersion: networking.istio.io/v1
+  kind: ServiceEntry
+  metadata:
+    name: host-boundary-children
+    namespace: gateway-origin
+  spec:
+    hosts:
+    - child.blocked-workload.gateway-origin.svc.cluster.local
+    - child.blocked-egress.gateway-origin.svc.cluster.local
+    ports:
+    - number: 80
+      name: http-boundary
+      protocol: HTTP
+    resolution: DNS
+    location: MESH_INTERNAL

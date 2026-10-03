@@ -13,3 +13,7 @@ actual="$(k get deployment egress -n gateway-test -o jsonpath='{.spec.template.s
 [[ "$actual" == "$image" ]] || { echo 'retained egress image mismatch' >&2; exit 2; }
 [[ "$(docker image inspect --format '{{.Id}}' "$image")" == "$(cat "$artifacts/gateway-image-id.txt")" ]] || { echo 'local image changed since setup; recreate the environment' >&2; exit 2; }
 "$BASH" "$root/test/e2e/scripts/foundation-check.sh" --root "$root" --cluster "$cluster" --kubeconfig "$kubeconfig" --image "$image" --config-dir "$config_dir" --artifacts "$artifacts" --state-dir "$state_dir"
+
+# The retained process must still use the staged public fixture inputs recorded at setup.
+k get configmap workload-shared egress-shared -n gateway-test -o json | jq -S '[.items[] | {name:.metadata.name,data,binaryData}] | sort_by(.name)' > "$state_dir/shared-current.json"
+cmp -s "$artifacts/shared-artifacts.json" "$state_dir/shared-current.json" || { echo 'retained shared artifacts changed; restore inputs or recreate the environment' >&2; exit 2; }
