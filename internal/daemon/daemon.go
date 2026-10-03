@@ -98,8 +98,9 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	params.GracefulShutdownPeriod = 2
 	params.ReadyTimeout = 20
 	params.ConfigOverrides = []string{"plugins.envoy_ext_authz_grpc.addr=" + c.OPAAddress(), "plugins.envoy_ext_authz_grpc.dry-run=false", "plugins.envoy_ext_authz_grpc.enable-reflection=false"}
-	if err := prepareWorkload(c, &params); err != nil {
-		return fmt.Errorf("prepare workload policy: %w", err)
+	policyExtension, err := configurePolicyHost(c, &params)
+	if err != nil {
+		return fmt.Errorf("configure policy host: %w", err)
 	}
 	embedded, err := runtime.NewRuntime(ctx, params)
 	if err != nil {
@@ -138,7 +139,7 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	}
 	var proxy *exec.Cmd
 	if c.ProxyMode == config.Standalone {
-		generated, err := prepareEnvoy(c)
+		generated, err := prepareEnvoy(c, policyExtension)
 		if err != nil {
 			return err
 		}
@@ -192,7 +193,7 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 		case err = <-sdsDone:
 			return fmt.Errorf("inspection SDS stopped unexpectedly: %v", err)
 		case <-ticker.C:
-			if err = checkOPA(ctx, c); err != nil {
+			if err = checkOPALiveness(ctx, c); err != nil {
 				return fmt.Errorf("required OPA service failed: %w", err)
 			}
 			err = checkProxy(ctx, c)
@@ -228,7 +229,17 @@ func Ready(ctx context.Context, c config.Config) error {
 	return checkProxy(ctx, c)
 }
 func checkOPA(ctx context.Context, c config.Config) error {
-	if err := get(ctx, filepath.Join(c.RuntimeDir, "opa-api.sock"), "http://localhost/health?plugins&bundles"); err != nil {
+	return checkOPAHealth(ctx, c, "http://localhost/health?plugins&bundles")
+}
+
+// A recoverable bundle/inspection error affects readiness, while the live OPA
+// service must remain running so its native update loop can recover.
+func checkOPALiveness(ctx context.Context, c config.Config) error {
+	return checkOPAHealth(ctx, c, "http://localhost/health")
+}
+
+func checkOPAHealth(ctx context.Context, c config.Config, endpoint string) error {
+	if err := get(ctx, filepath.Join(c.RuntimeDir, "opa-api.sock"), endpoint); err != nil {
 		return err
 	}
 	// The upstream plugin may report its last healthy status after Serve fails.

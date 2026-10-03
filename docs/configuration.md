@@ -10,11 +10,14 @@ OPA or Envoy dependencies. The daemon consumes this package directly.
 | `GATEWAY_PROXY_MODE` | `istio` | `standalone` supervises Envoy; `istio` supervises pilot-agent |
 | `GATEWAY_IDENTITY_PROVIDER` | `istio-mtls` | Verified peer TLS principal through the official OPA plugin; other providers fail startup |
 | `OPA_CONFIG` | `/etc/gateway/opa/<role>.yaml` | Embedded OPA configuration; upstream bundle capabilities remain available |
-| `GATEWAY_WORKLOAD_CONFIG` | Unset | Trusted static shared bundle, descriptor files and egress peer binding; see [policy integration](policy-contract.md) |
 | `ENVOY_CONFIG` | Unset | Required standalone bootstrap; rejected in Istio mode |
 | `GATEWAY_STATE_DIR` | `/var/lib/gateway/private` | Private Pod-lifetime inspection CA state |
 | `GATEWAY_PUBLIC_DIR` | `/run/gateway/trust` | Separately mountable public inspection certificate directory |
 | `GATEWAY_RUNTIME_DIR` | `/run/gateway/private` | Private sockets and generated standalone bootstrap |
+
+`GATEWAY_WORKLOAD_CONFIG` has been removed and causes a migration error when set.
+Use the native bundle and Policy plugin settings under `OPA_CONFIG`; see
+[policy integration](policy-contract.md).
 
 Unset variables use defaults. Explicit empty values are rejected. Paths must be
 clean absolute paths. All three directories must be disjoint; directory symlinks

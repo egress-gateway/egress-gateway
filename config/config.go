@@ -46,7 +46,6 @@ type Config struct {
 	Role             Role
 	ProxyMode        ProxyMode
 	OPAConfig        string
-	WorkloadConfig   string
 	EnvoyConfig      string
 	StateDir         string
 	PublicDir        string
@@ -64,6 +63,9 @@ func Defaults() Config {
 // to the selected role's file. Explicit empty values are invalid, not defaults.
 func Load(lookup func(string) (string, bool)) (Config, error) {
 	c := Defaults()
+	if _, set := lookup("GATEWAY_WORKLOAD_CONFIG"); set {
+		return c, fmt.Errorf("GATEWAY_WORKLOAD_CONFIG is no longer supported; configure the Policy extension and native bundles in OPA_CONFIG")
+	}
 	role, err := value(lookup, EnvRole, string(c.Role))
 	if err != nil {
 		return c, err
@@ -81,7 +83,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	}{
 		{EnvIdentityProvider, &c.IdentityProvider, c.IdentityProvider},
 		{EnvOPAConfig, &c.OPAConfig, "/etc/gateway/opa/" + role + ".yaml"},
-		{EnvWorkloadConfig, &c.WorkloadConfig, ""}, {EnvEnvoyConfig, &c.EnvoyConfig, ""}, {EnvStateDir, &c.StateDir, c.StateDir},
+		{EnvEnvoyConfig, &c.EnvoyConfig, ""}, {EnvStateDir, &c.StateDir, c.StateDir},
 		{EnvPublicDir, &c.PublicDir, c.PublicDir}, {EnvRuntimeDir, &c.RuntimeDir, c.RuntimeDir},
 	} {
 		*item.target, err = value(lookup, item.name, item.fallback)
@@ -120,9 +122,6 @@ func (c Config) Validate() error {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
 			return fmt.Errorf("expected a clean absolute non-root path: %q", path)
 		}
-	}
-	if c.WorkloadConfig != "" && !artifactPath(c.WorkloadConfig) {
-		return fmt.Errorf("%s must be a clean absolute file path", EnvWorkloadConfig)
 	}
 	if c.ProxyMode == Standalone && c.EnvoyConfig == "" {
 		return fmt.Errorf("standalone mode requires %s", EnvEnvoyConfig)

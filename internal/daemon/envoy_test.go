@@ -32,7 +32,7 @@ static_resources:
 	if err := os.WriteFile(c.EnvoyConfig, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path, err := prepareEnvoy(c)
+	path, err := prepareEnvoy(c, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,14 +52,13 @@ static_resources:
 	if strings.Contains(string(raw), "127.0.0.1") {
 		t.Fatal("management remained on shared network")
 	}
-	c.WorkloadConfig = "/trusted/runtime.json"
-	if _, err = prepareEnvoy(c); err == nil || !strings.Contains(err.Error(), "ext_authz") {
+	if _, err = prepareEnvoy(c, true); err == nil || !strings.Contains(err.Error(), "ext_authz") {
 		t.Fatalf("shared policy without authorization filter: %v", err)
 	}
 	if err = os.WriteFile(c.EnvoyConfig, []byte("dynamic_resources: {}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = prepareEnvoy(c); err == nil {
+	if _, err = prepareEnvoy(c, false); err == nil {
 		t.Fatal("accepted competing discovery ownership")
 	}
 }
@@ -76,7 +75,7 @@ func TestSharedAuthorizationConfiguration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			c := config.Defaults()
-			c.RuntimeDir, c.EnvoyConfig, c.WorkloadConfig = dir, filepath.Join(dir, "envoy.json"), "/trusted/runtime.json"
+			c.RuntimeDir, c.EnvoyConfig = dir, filepath.Join(dir, "envoy.json")
 			filter := map[string]any{"name": "envoy.filters.http.ext_authz", "typed_config": json.RawMessage(tc.typed)}
 			hcm := map[string]any{"name": "envoy.filters.network.http_connection_manager", "typed_config": map[string]any{"http_filters": []any{filter}}}
 			bootstrap := map[string]any{"static_resources": map[string]any{"listeners": []any{map[string]any{"filter_chains": []any{map[string]any{"filters": []any{hcm}}}}}}}
@@ -87,7 +86,7 @@ func TestSharedAuthorizationConfiguration(t *testing.T) {
 			if err = os.WriteFile(c.EnvoyConfig, raw, 0600); err != nil {
 				t.Fatal(err)
 			}
-			path, err := prepareEnvoy(c)
+			path, err := prepareEnvoy(c, true)
 			if tc.invalid {
 				if err == nil || !strings.Contains(err.Error(), "ext_authz") {
 					t.Fatalf("invalid authorization config: %v", err)

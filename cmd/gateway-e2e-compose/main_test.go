@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/egress-gateway/egress-gateway-policy/extension"
 	"github.com/egress-gateway/egress-gateway/config"
-	"github.com/egress-gateway/egress-gateway/internal/artifacts"
+	gatewayopa "github.com/egress-gateway/egress-gateway/internal/opa"
+	"github.com/open-policy-agent/opa/v1/plugins"
+	"github.com/open-policy-agent/opa/v1/runtime"
 
 	core "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
@@ -53,34 +58,79 @@ func TestFixtureUsesPublicCompositionBeforeCreation(t *testing.T) {
 				t.Fatal(err)
 			}
 			role := strings.TrimSuffix(cm.Name, "-shared")
-			var cfg config.PolicyRuntime
-			if err := json.Unmarshal([]byte(cm.Data["runtime.json"]), &cfg); err != nil {
+			var native map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(cm.Data["opa.json"]), &native); err != nil {
 				t.Fatal(err)
 			}
-			dir := t.TempDir()
+			var pluginConfig map[string]json.RawMessage
+			if err := json.Unmarshal(native["plugins"], &pluginConfig); err != nil {
+				t.Fatal(err)
+			}
+			var cfg extension.Config
+			if err := json.Unmarshal(pluginConfig[extension.PluginName], &cfg); err != nil {
+				t.Fatal(err)
+			}
+			dir, err := os.MkdirTemp("", "fixture-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.RemoveAll(dir) })
 			for name, data := range cm.BinaryData {
 				if err := os.WriteFile(filepath.Join(dir, name), data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
-			cfg.Bundle = filepath.Join(dir, filepath.Base(cfg.Bundle))
 			for i := range cfg.Descriptors {
 				cfg.Descriptors[i].Path = filepath.Join(dir, filepath.Base(cfg.Descriptors[i].Path))
 			}
-			cfgRaw, err := json.Marshal(cfg)
+			if len(cfg.Descriptors) != 2 || cfg.Role != role {
+				t.Fatal("lost descriptor views or role")
+			}
+			pluginConfig[extension.PluginName], err = json.Marshal(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(dir, "runtime.json")
-			if err := os.WriteFile(path, cfgRaw, 0600); err != nil {
+			pluginConfig["envoy_ext_authz_grpc"], err = json.Marshal(map[string]any{"addr": "unix://" + filepath.Join(dir, "auth.sock"), "path": extension.DecisionPath, "skip-request-body-parse": true})
+			if err != nil {
 				t.Fatal(err)
 			}
-			loaded, err := artifacts.LoadWorkload(path, config.Role(role))
+			native["plugins"], err = json.Marshal(pluginConfig)
 			if err != nil {
-				t.Fatalf("%s actual runtime load: %v", role, err)
+				t.Fatal(err)
 			}
-			if len(loaded.Descriptors) != 2 {
-				t.Fatal("distinct descriptor views missing")
+			native["bundles"], err = json.Marshal(map[string]any{"workload": map[string]any{"resource": "file://" + filepath.Join(dir, "workload.tar.gz")}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(native)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "opa.json")
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			gatewayopa.RegisterPlugins()
+			params := runtime.NewParams()
+			params.ConfigFile = path
+			rt, err := runtime.NewRuntime(t.Context(), params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := rt.Manager.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { rt.Manager.Stop(context.Background()) })
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				status := rt.Manager.PluginStatus()[extension.PluginName]
+				if status != nil && status.State == plugins.StateOK {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("fixture extension not ready: %+v", status)
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
 			shared[role] = true
 		}
@@ -122,10 +172,10 @@ func assertSharedProxy(t *testing.T, spec core.PodSpec, staged bool) {
 	found := false
 	for _, c := range append(spec.InitContainers, spec.Containers...) {
 		for _, env := range c.Env {
-			if env.Name != config.EnvWorkloadConfig {
+			if env.Name != config.EnvOPAConfig {
 				continue
 			}
-			if c.Name != "istio-proxy" || len(c.Args) != 0 || env.Value != "/etc/gateway/shared/runtime.json" {
+			if c.Name != "istio-proxy" || len(c.Args) != 0 || env.Value != "/etc/gateway/shared/opa.json" {
 				t.Fatal("shared input leaked or fixture authorization retained")
 			}
 			found = true

@@ -89,7 +89,7 @@ func (s *scenario) mutationMode(enabled bool) error {
 					continue
 				}
 				c.Args = []string{"--policy", "/etc/gateway/policy/policy.rego"}
-				c.Env = slices.DeleteFunc(c.Env, func(e core.EnvVar) bool { return e.Name == config.EnvWorkloadConfig || e.Name == config.EnvOPAConfig })
+				c.Env = slices.DeleteFunc(c.Env, func(e core.EnvVar) bool { return e.Name == config.EnvOPAConfig })
 				c.Env = append(c.Env, core.EnvVar{Name: config.EnvOPAConfig, Value: "/etc/gateway/policy/opa.yaml"})
 			}
 		}

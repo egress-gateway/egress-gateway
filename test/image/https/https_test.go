@@ -96,6 +96,7 @@ func runHTTPSMode(t *testing.T, tracingMode string, shared bool) {
 	if tracingMode != "" {
 		collectorID = startTracingCollector(t, state, start)
 	}
+	sources := map[string]*imagePolicySource{}
 	startProxy := func(role string) string {
 		envoyConfig := filepath.Join(fixture, role+"-envoy.json")
 		opaConfig := filepath.Join(root, "examples/local", role+"-opa.yaml")
@@ -146,12 +147,15 @@ func runHTTPSMode(t *testing.T, tracingMode string, shared bool) {
 			args = append(args, tracingEnvironment(state, role, tracingMode)...)
 		}
 		if shared {
-			stageSharedPolicy(t, state, role)
-			args = append(args, "-p", "127.0.0.1::8080", "-e", "GATEWAY_WORKLOAD_CONFIG=/policy/runtime.json", "-v", filepath.Join(state, role+"-policy")+":/policy:ro", image)
+			sources[role] = stageSharedPolicy(t, state, role)
+			args = append(args, "--add-host", "host.docker.internal:host-gateway", "-p", "127.0.0.1::8080", "-e", "OPA_CONFIG=/policy/opa.json", "-v", filepath.Join(state, role+"-policy")+":/policy:ro", image)
 		} else {
 			args = append(args, image, "--policy", "/fixture/policy.rego")
 		}
 		id := start(role, args...)
+		if shared {
+			sources[role].initialAvailable(t, id)
+		}
 		until(t, 30*time.Second, func() bool { return exec.Command("docker", "exec", id, "gateway-daemon", "ready").Run() == nil })
 		return id
 	}
@@ -214,6 +218,7 @@ func runHTTPSMode(t *testing.T, tracingMode string, shared bool) {
 	}
 	if shared {
 		runSharedTraffic(t, state, host, workload, egress, origin, roots, client)
+		runImageNativeUpdates(t, sources, workload, egress, host, client)
 		return
 	}
 	var coldSerial string

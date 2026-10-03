@@ -24,7 +24,7 @@ isolation uses the one-time Pod UID rules described in
 | Owner | Responsibility |
 |---|---|
 | gateway | Public runtime config, trusted Pod composition, Istio integration, private runtime resources, daemon/image and consumer acceptance |
-| policy | Public workload semantics, normalized contract and fixed baseline Rego |
+| policy | Public workload semantics, normalized contract, execution artifacts and OPA inspection extension |
 | networking | Calico installation, policy expansion, platform permission validation and pre-business IPv6 disablement |
 | controller | CRDs, binding, admission, publication and desired-state status |
 | Istio | Mesh discovery, workload identity, mTLS and Envoy ownership under pilot-agent |
@@ -43,7 +43,9 @@ Workload raw routes to the allowed gateway ports are removed; those listeners al
 require client identity. Networking policy remains Pod-wide, and protocol/fault
 evidence is collected separately from content authorization.
 
-Shared static mode loads verified library-built bundles and descriptor snapshots before
-proxy startup. Its private adapter reuses the official OPA Envoy plugin and public
-shared Rego query. See [policy integration](policy-contract.md) for the consumer
+Shared policy integration registers Policy's extension and uses native OPA bundle
+loading/pull. First usable policy and dependencies are required before proxy startup.
+Recoverable bundle failures expose readiness/status while liveness keeps the native
+update loop running; successful later updates recover without process replacement.
+Gateway does not read policy DSL, decode payloads or build bridge Rego. See [policy integration](policy-contract.md) for the consumer
 inputs and supported wire formats.

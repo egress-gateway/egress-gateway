@@ -201,7 +201,7 @@ func assertStartup(dir, id, workload, origin string) error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(logs, "read workload configuration") || !strings.Contains(logs, "/etc/gateway/shared/not-present.json") {
+	if !strings.Contains(logs, "read OPA configuration") || !strings.Contains(logs, "/etc/gateway/shared/not-present.json") {
 		return errors.New("startup prevention is not attributable to required policy initialization")
 	}
 	egress, err := readText(filepath.Join(dir, "egress.log"))

@@ -8,7 +8,7 @@ startup_pod="workload-start-$(basename "$artifacts" | cut -c1-8)"
 request_id="$(basename "$artifacts")-startup"
 origin_control "$request_id-before" > "$artifacts/fault/receiver-before.txt"
 jq --arg name "$startup_pod" '.metadata.name=$name' "$state_dir/workload-template.json" > "$artifacts/fault/recovery-pod.json"
-jq '(.spec.initContainers[] | select(.name=="istio-proxy")).env |= map(if .name=="GATEWAY_WORKLOAD_CONFIG" then .value="/etc/gateway/shared/not-present.json" else . end)' "$artifacts/fault/recovery-pod.json" > "$artifacts/fault/startup-pod.json"
+jq '(.spec.initContainers[] | select(.name=="istio-proxy")).env |= map(if .name=="OPA_CONFIG" then .value="/etc/gateway/shared/not-present.json" else . end)' "$artifacts/fault/recovery-pod.json" > "$artifacts/fault/startup-pod.json"
 k create -f "$artifacts/fault/startup-pod.json"
 cleanup() { rc=$?; trap - EXIT; k -n gateway-test delete pod "$startup_pod" --ignore-not-found --wait=true --timeout=60s || rc=2; exit "$rc"; }
 trap cleanup EXIT

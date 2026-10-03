@@ -67,6 +67,7 @@ func Run(ctx context.Context, e *environment.Environment, tags string) error {
 		sc.Step(`^valid empty shared policies preserve independent admission$`, s.emptyShared)
 		sc.Step(`^shared HTTP selection "([^"]*)" is enforced$`, s.sharedHTTP)
 		sc.Step(`^shared RPC selection "([^"]*)" is enforced$`, s.sharedRPC)
+		sc.Step(`^native policy updates for "([^"]*)" are measured without replacing the workload$`, s.nativeUpdates)
 		sc.Step(`^shared host denial is enforced by "([^"]*)"$`, s.sharedHost)
 		sc.Step(`^the workload exercises the governed "([^"]*)" request$`, s.content)
 		sc.Step(`^the deployed mutation-only authorization fixture tries to change the target$`, s.mutation)

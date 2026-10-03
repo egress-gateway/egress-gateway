@@ -9,11 +9,13 @@ import (
 	"time"
 
 	policybundle "github.com/egress-gateway/egress-gateway-policy/bundle"
+	"github.com/egress-gateway/egress-gateway-policy/extension"
 	"github.com/egress-gateway/egress-gateway-policy/workload"
 	"github.com/egress-gateway/egress-gateway/config"
 	gatewayopa "github.com/egress-gateway/egress-gateway/internal/opa"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	auth "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"github.com/open-policy-agent/opa/v1/plugins"
 	"github.com/open-policy-agent/opa/v1/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,7 +29,7 @@ func TestSharedBundleThroughOfficialAuthorizationService(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	p := workload.Policy{RequestConstraints: []workload.Constraint{{Name: "body", Match: workload.Match{Hosts: []workload.HostMatcher{{Type: workload.Exact, Value: "api.example"}}, HTTP: &workload.HTTPMatch{}}, Decode: &workload.Decoder{Format: workload.JSON}, Require: []workload.Requirement{{Source: workload.Payload, Pointer: new("/model"), Operator: workload.In, Values: []string{"good"}}}}}}
-	archive, err := policybundle.Build(p)
+	archive, err := policybundle.BuildExecution(p, "component")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,25 +41,25 @@ func TestSharedBundleThroughOfficialAuthorizationService(t *testing.T) {
 		}
 	}
 	write(bundlePath, archive)
-	raw, err := json.Marshal(config.PolicyRuntime{Bundle: bundlePath})
+	opaPath := filepath.Join(dir, "opa.json")
+	raw, err := json.Marshal(map[string]any{
+		"plugins": map[string]any{extension.PluginName: extension.Config{Role: "egress"}, "envoy_ext_authz_grpc": map[string]any{"addr": "unix://" + filepath.Join(dir, "auth.sock"), "path": "fixture/must/be/overridden"}},
+		"bundles": map[string]any{"workload": map[string]any{"resource": "file://" + bundlePath}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := filepath.Join(dir, "workload.json")
-	write(cfgPath, raw)
-	opaPath := filepath.Join(dir, "opa.yaml")
-	write(opaPath, []byte("plugins:\n  envoy_ext_authz_grpc:\n    addr: unix://"+filepath.Join(dir, "auth.sock")+"\n    path: fixture/must/be/overridden\n"))
+	write(opaPath, raw)
 	params := runtime.NewParams()
 	params.ConfigFile = opaPath
 	params.Addrs = new([]string{"unix://" + filepath.Join(dir, "api.sock")})
 	params.AddrSetByUser = true
 	params.ReadyTimeout = 10
 	params.GracefulShutdownPeriod = 1
-	if err := prepareWorkload(config.Config{Role: config.Workload, RuntimeDir: dir, WorkloadConfig: cfgPath}, &params); err != nil {
-		t.Fatal(err)
+	enabled, err := configurePolicyHost(config.Config{Role: config.Workload, RuntimeDir: dir}, &params)
+	if err != nil || !enabled {
+		t.Fatalf("configure policy host: enabled=%v err=%v", enabled, err)
 	}
-	// The active runtime must use the already verified snapshot, not reread inputs.
-	write(bundlePath, []byte("replaced after preparation"))
 	register.Do(gatewayopa.RegisterPlugins)
 	embedded, err := runtime.NewRuntime(t.Context(), params)
 	if err != nil {
@@ -77,6 +79,17 @@ func TestSharedBundleThroughOfficialAuthorizationService(t *testing.T) {
 			t.Error("OPA did not stop")
 		}
 	})
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		status := embedded.Manager.PluginStatus()[extension.PluginName]
+		if status != nil && status.State == plugins.StateOK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("extension did not become ready: %+v", status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	conn, err := grpc.NewClient("unix://"+filepath.Join(dir, "auth.sock"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)

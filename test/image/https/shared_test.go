@@ -3,6 +3,7 @@
 package https_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -13,16 +14,21 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	policybundle "github.com/egress-gateway/egress-gateway-policy/bundle"
+	"github.com/egress-gateway/egress-gateway-policy/extension"
 	"github.com/egress-gateway/egress-gateway-policy/workload"
 	"github.com/egress-gateway/egress-gateway/config"
 	"github.com/egress-gateway/egress-gateway/internal/request"
+	opabundle "github.com/open-policy-agent/opa/v1/bundle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	health "google.golang.org/grpc/health/grpc_health_v1"
@@ -34,7 +40,7 @@ import (
 
 func TestSharedPolicyInspection(t *testing.T) { runHTTPSMode(t, "", true) }
 
-func stageSharedPolicy(t *testing.T, state, role string) {
+func stageSharedPolicy(t *testing.T, state, role string) *imagePolicySource {
 	t.Helper()
 	dir := filepath.Join(state, role+"-policy")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -57,21 +63,37 @@ func stageSharedPolicy(t *testing.T, state, role string) {
 		{Name: "rpc-metadata", Match: workload.Match{Hosts: hosts, GRPC: &workload.GRPCMatch{Service: "grpc.health.v1.Health"}}, Require: []workload.Requirement{{Source: workload.GRPCMetadata, Name: new("x-role"), Operator: workload.In, Values: []string{"reader"}}}},
 		{Name: "http-carrier", Match: workload.Match{Hosts: hosts, HTTP: &workload.HTTPMatch{Paths: []string{"/grpc.health.v1.Health/Check"}}}, Require: []workload.Requirement{{Source: workload.Header, Name: new("x-carrier"), Operator: workload.NotIn, Values: []string{"blocked"}}}},
 	}}
-	archive, err := policybundle.Build(p)
+	archive, err := policybundle.BuildExecution(p, "image-"+role)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.PolicyRuntime{Bundle: "/policy/workload.tar.gz", Descriptors: []config.DescriptorFile{{URL: ref.URL, Digest: ref.Digest, Path: "/policy/health.pb"}}}
+	cfg := extension.Config{Role: role, Descriptors: []extension.DescriptorFile{{URL: ref.URL, Digest: ref.Digest, Path: "/policy/health.pb"}}}
 	if role == "egress" {
 		cfg.AllowedPeers = []string{"spiffe://fixture.test/ns/gateway/sa/workload"}
 	}
-	raw, err := json.Marshal(cfg)
+	source := &imagePolicySource{raw: archive, status: 503}
+	server := httptest.NewUnstartedServer(source)
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, b := range map[string][]byte{"runtime.json": raw, "workload.tar.gz": archive, "health.pb": descriptor} {
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	port := listener.Addr().(*net.TCPAddr).Port
+	raw, err := json.Marshal(map[string]any{
+		"services": map[string]any{"publisher": map[string]any{"url": fmt.Sprintf("http://host.docker.internal:%d", port)}},
+		"status":   map[string]any{"console": true},
+		"plugins":  map[string]any{extension.PluginName: cfg, "envoy_ext_authz_grpc": map[string]any{"path": extension.DecisionPath, "skip-request-body-parse": true}},
+		"bundles":  map[string]any{"workload": map[string]any{"service": "publisher", "resource": "bundle", "polling": map[string]any{"min_delay_seconds": 1, "max_delay_seconds": 1}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range map[string][]byte{"opa.json": raw, "workload.tar.gz": archive, "health.pb": descriptor} {
 		writeFixture(t, filepath.Join(dir, name), b)
 	}
+	return source
 }
 
 func sharedBootstrap(t *testing.T, state, path, role string) string {
@@ -403,4 +425,150 @@ type sharedDelivery struct {
 	id      string
 	allowed bool
 	denier  string
+}
+
+type imagePolicySource struct {
+	mu       sync.Mutex
+	raw      []byte
+	status   int
+	requests int
+}
+
+func (s *imagePolicySource) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests++
+	if s.status != 0 {
+		w.WriteHeader(s.status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/gzip")
+	_, _ = w.Write(s.raw)
+}
+func (s *imagePolicySource) initialAvailable(t *testing.T, id string) {
+	t.Helper()
+	until(t, 10*time.Second, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.requests > 0 })
+	if exec.Command("docker", "exec", id, "gateway-daemon", "ready").Run() == nil {
+		t.Fatal("image became ready before first usable native bundle")
+	}
+	s.mu.Lock()
+	s.status = 0
+	s.mu.Unlock()
+}
+
+func (s *imagePolicySource) replace(raw []byte, status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.raw, s.status = raw, status
+}
+
+type imageNativeStatus struct {
+	Type    string `json:"type"`
+	Bundles map[string]*struct {
+		ActiveRevision string `json:"active_revision"`
+		Code           string `json:"code"`
+	} `json:"bundles"`
+}
+
+func runImageNativeUpdates(t *testing.T, sources map[string]*imagePolicySource, workloadID, egressID, host string, client *http.Client) {
+	t.Helper()
+	containers := map[string]string{"workload": workloadID, "egress": egressID}
+	identities := map[string]string{}
+	for role, id := range containers {
+		identities[role] = run(t, "docker", "inspect", "--format", "{{.Id}} {{.State.StartedAt}} {{.RestartCount}}", id)
+	}
+	publish := func(role, revision string, p workload.Policy) {
+		t.Helper()
+		raw, err := policybundle.BuildExecution(p, revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources[role].replace(raw, 0)
+	}
+	native := func(role, revision string, failed bool) {
+		t.Helper()
+		until(t, 20*time.Second, func() bool {
+			raw := run(t, "docker", "logs", containers[role])
+			var latest imageNativeStatus
+			for line := range strings.SplitSeq(raw, "\n") {
+				var row imageNativeStatus
+				if json.Unmarshal([]byte(line), &row) == nil && row.Type == "openpolicyagent.org/status" {
+					latest = row
+				}
+			}
+			status := latest.Bundles["workload"]
+			return status != nil && status.ActiveRevision == revision && (status.Code != "") == failed
+		})
+	}
+	request := func(want int) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "https://"+host+":8443/body", strings.NewReader(`{"action":"safe"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.StatusCode != want || (want == 200 && !strings.Contains(string(raw), "upstream reached")) {
+			t.Fatalf("native update traffic: status=%d body=%s err=%v", response.StatusCode, raw, err)
+		}
+	}
+	for role := range sources {
+		publish(role, "image-empty-"+role, workload.Policy{})
+		native(role, "image-empty-"+role, false)
+	}
+	for _, role := range []string{"workload", "egress"} {
+		t.Run("native-updates-"+role, func(t *testing.T) {
+			request(200)
+			deny := workload.Policy{RequestConstraints: []workload.Constraint{{Name: "updated-body", Match: workload.Match{Hosts: []workload.HostMatcher{{Type: workload.DomainSuffix, Value: "origin.test"}}, HTTP: &workload.HTTPMatch{Paths: []string{"/body"}}}, Decode: &workload.Decoder{Format: workload.JSON}, Require: []workload.Requirement{{Source: workload.Payload, Pointer: new("/action"), Operator: workload.In, Values: []string{"deny-safe"}}}}}}
+			good := "image-deny-" + role
+			publish(role, good, deny)
+			native(role, good, false)
+			request(403)
+			for _, failure := range []string{"unavailable", "invalid", "compile"} {
+				body := []byte("invalid archive")
+				status := 0
+				if failure == "unavailable" {
+					status = 503
+				}
+				if failure == "compile" {
+					raw, err := policybundle.BuildExecution(workload.Policy{}, "must-not-activate")
+					if err != nil {
+						t.Fatal(err)
+					}
+					b, err := opabundle.NewReader(bytes.NewReader(raw)).Read()
+					if err != nil {
+						t.Fatal(err)
+					}
+					b.Modules = append(b.Modules, opabundle.ModuleFile{URL: "bad.rego", Path: "bad.rego", Raw: []byte("package egress_gateway.workload.bad\nvalue := missing_function()")})
+					var out bytes.Buffer
+					if err := opabundle.NewWriter(&out).Write(b); err != nil {
+						t.Fatal(err)
+					}
+					body = out.Bytes()
+				}
+				sources[role].replace(body, status)
+				native(role, good, true)
+				request(403)
+				publish(role, "image-recovered-"+role+"-"+failure, workload.Policy{})
+				native(role, "image-recovered-"+role+"-"+failure, false)
+				request(200)
+				publish(role, good, deny)
+				native(role, good, false)
+				request(403)
+			}
+			publish(role, "image-final-"+role, workload.Policy{})
+			native(role, "image-final-"+role, false)
+			request(200)
+		})
+	}
+	for role, id := range containers {
+		if got := run(t, "docker", "inspect", "--format", "{{.Id}} {{.State.StartedAt}} {{.RestartCount}}", id); got != identities[role] {
+			t.Fatalf("runtime restarted: %s", role)
+		}
+	}
 }

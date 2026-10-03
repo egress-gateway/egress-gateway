@@ -40,11 +40,10 @@ cmd/gateway-daemon/     Embedded OPA and proxy supervision
 config/                Public startup and volume contract
 enrollment/            Pure Gateway Kubernetes composition using networking
 cmd/gateway-opa/        Development-only OPA integration-test utility
-internal/opa/           Registration of upstream and future project plugins
+internal/opa/           Registration of Policy and upstream plugins
 internal/plugins/       Extension boundary for future project plugins
 internal/request/       Request adaptation boundary
 internal/identity/      Trusted identity adaptation boundary
-internal/artifacts/     Runtime artifact adaptation boundary
 configs/opa/            OPA startup configuration for both roles
 configs/envoy/          Envoy configuration ownership
 integrations/istio/     Istio integration contract and pending validation
@@ -57,13 +56,13 @@ docs/                  Architecture, extensions, configuration, and compatibilit
 
 `internal/request` supplies the private HTTP/HTTPS target guard. Trusted identity uses
 the official OPA plugin input from verified TLS; no public policy DTO is introduced.
-`internal/adapter` owns normalization and payload decoding; `internal/artifacts` verifies the static bundle and descriptors.
+Policy owns normalization, payload decoding and descriptor verification through its registered OPA extension.
 
 ## Shared policy library
 
 Public policy types, normalized inputs and decisions, baseline Rego, and shared semantic fixtures belong in [`egress-gateway-policy`](https://github.com/egress-gateway/egress-gateway-policy). Gateway consumes its pinned public module; the controller owns future Kubernetes mapping and delivery.
 
-Set `GATEWAY_WORKLOAD_CONFIG` to a trusted static artifact configuration to enforce library-built bundles at both roles. Gateway preserves repeated request values, strictly decodes JSON and bounded unary gRPC/Protobuf, and retains independent egress peer admission. The example `fixture.*` policies remain test-only. See the [shared integration contract](docs/policy-contract.md).
+Set `OPA_CONFIG` to native OPA configuration enabling Policy's extension and standard bundle loading/pull. Publish `bundle.BuildExecution` artifacts. Policy preserves repeated request values, strict JSON and bounded unary gRPC/Protobuf inspection, and independent egress peer admission. Gateway hosts the runtime without interpreting the policy DSL. The example `fixture.*` policies remain test-only. See the [shared integration contract](docs/policy-contract.md).
 
 ## Documentation
 

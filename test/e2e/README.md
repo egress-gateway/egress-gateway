@@ -174,11 +174,14 @@ readiness. Retained `test` runs recreate case-specific Pods and restore shared o
 ## Shared HTTP and gRPC policy
 
 The static consumer builds each role's archive using the pinned policy library's
-`bundle.Build`. It stages that archive, runtime JSON and two independent Health
+`bundle.BuildExecution`. It stages that archive, native OPA configuration and two independent Health
 service descriptor views in role ConfigMaps before creating consumers. Only the
 managed proxy mounts those inputs. Egress separately admits the workload service
 account's verified SPIFFE identity. Reusing an environment checks that the staged
-ConfigMap bytes match setup; changed inputs require restoration or fresh setup.
+ConfigMap bytes and publisher-served bundle digests match setup; changed inputs
+require restoration or fresh setup. A test-only publisher provides read-only HTTP
+bundle endpoints. Its update listener is loopback-only, accessible to the trusted
+runner via authenticated `kubectl exec`; it is not a Gateway product service.
 
 `@shared` exercises JSON payloads, Header/Query selection and actual TLS/HTTP2
 unary gRPC with payload and text metadata constraints. The two descriptors assign
@@ -198,7 +201,7 @@ same healthy origin Pod. Shared-policy denials require the responsible proxy's
 `ext_authz_denied` event, both-hop correlation where appropriate, verified peer
 identity, and absence of the protected operation. A transport error alone fails.
 
-Case-specific startup Pods prove that missing/invalid bundles and missing,
+Case-specific startup Pods prove that unavailable native sources, missing/invalid bundles and missing,
 digest-mismatched, wrong-method or unresolved-import descriptors terminate Gateway
 startup before the business container starts. Explicit empty bundles allow the
 request while a valid mesh certificate from an unadmitted service account still
@@ -208,3 +211,14 @@ The `fixture.*` Rego files are used only while the target-mutation scenario
 explicitly switches both roles into that fault mode. All other governed requests
 use the shared library's baseline. That scenario restores the saved shared
 configuration and requires the post-authorization guard's actual mutation denial.
+
+`@shared-updates` uses native OPA one-second polling for both roles. It repeats
+allow-to-deny and deny-to-allow transitions three times per role while the other
+role stays permissive. Measurements begin at publisher byte availability and end
+at the first attributable application response enforcing the update. Native active
+revision and activation timing are recorded separately. Probe cadence is 200 ms
+plus request duration; artifacts include observations and uncertainty, candidate
+SHA/image ID, and unchanged Pod/container/restart identity. The primary measurement
+includes native polling and probe launch/response time. There is no latency SLO.
+Download, archive-loading and compilation failures retain the last good decision;
+later valid bundles recover. Each case restores the original served artifacts.
