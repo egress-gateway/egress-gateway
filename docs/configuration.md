@@ -82,9 +82,16 @@ rewrites the named `inspection_sds` cluster and `gateway.request`/`gateway.dispa
 integration references the same paths through EnvoyFilter; the daemon does not
 publish competing mesh xDS resources.
 
-Install the guard only on dedicated HTTPS listeners. It validates SNI against the
-canonical authority at workload ingress and fixes scheme to HTTPS at both roles.
-Egress obtains the official OPA `input.source_principal` from Envoy-verified TLS.
+The HTTPS guard validates SNI against the canonical authority at workload ingress
+and fixes scheme to HTTPS at both roles. The private HTTP-origin variant fixes
+scheme to HTTP and still requires mesh TLS at egress. Egress listeners must require
+a client certificate and enforce trusted-chain validation; permissive certificate
+validation is unsupported. Egress obtains the official OPA `input.source_principal`
+from that authenticated TLS peer. The guard checks that the peer certificate is
+present, including resumed sessions; Envoy's per-handshake `validated` flag is false
+on resumption even when the original certificate was verified. The image regression
+requires actual session resumption, continuing allow/deny decisions, and rejection
+of an untrusted certificate claiming the workload URI.
 There is no custom identity or original-scheme header protocol. Authorization must
 buffer complete bodies up to 64 KiB, reject partial bodies and errors, prohibit
 decision mutations of the authorized target, and precede dynamic forward proxy.

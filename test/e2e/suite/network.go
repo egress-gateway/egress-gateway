@@ -242,7 +242,7 @@ func captureCount(text string) (uint64, error) {
 func blackholeCount(text string) (uint64, error) {
 	for line := range strings.SplitSeq(text, "\n") {
 		name, value, ok := strings.Cut(line, ": ")
-		if ok && name == "cluster.BlackHoleCluster.upstream_cx_none_healthy" {
+		if ok && name == "cluster.BlackHoleCluster;.upstream_cx_none_healthy" {
 			return strconv.ParseUint(strings.TrimSpace(value), 10, 64)
 		}
 	}

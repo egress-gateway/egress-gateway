@@ -9,7 +9,7 @@ workload:
   trustMounts:
     curl: /cacert.pem
   discoveryAddress: istiod.istio-system.svc:15012
-  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","cluster\\.BlackHoleCluster\\..*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","cluster\\.BlackHoleCluster;\\..*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
   proxyEnv:
   - name: OTEL_SERVICE_NAME
     value: opa-env-boundary
@@ -36,7 +36,7 @@ egress:
   imagePullPolicy: Never
   originTrustConfigMap: origin-trust
   discoveryAddress: istiod.istio-system.svc:15012
-  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","cluster\\.BlackHoleCluster\\..*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
+  proxyConfig: '{"discoveryAddress":"istiod.istio-system.svc:15012","concurrency":2,"proxyStatsMatcher":{"inclusionRegexps":[".*on_demand_secret.*","cluster\\.inspection_sds\\..*",".*ssl.*","cluster\\.BlackHoleCluster;\\..*","overload\\..*"]},"proxyMetadata":{"ISTIO_META_GLOBAL_DOWNSTREAM_MAX_CONNECTIONS":"64"}}'
   proxyEnv:
   - name: OTEL_SERVICE_NAME
     value: opa-env-boundary

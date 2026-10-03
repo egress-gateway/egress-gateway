@@ -46,7 +46,10 @@ function envoy_on_request(handle)
   end
   local tls = info:downstreamSslConnection()
   if (scheme == "https" or role == "egress") and not tls then reject(handle, "TLS required"); return end
-  if role == "egress" and not tls:peerCertificateValidated() then
+  -- The trusted listener requires a client certificate and verifies its chain.
+  -- Envoy's per-handshake validated flag is false on resumed TLS sessions;
+  -- the authenticated peer certificate remains available to ext_authz.
+  if role == "egress" and not tls:peerCertificatePresented() then
     handle:respond({[":status"] = "403"}, "verified workload identity required")
     return
   end
