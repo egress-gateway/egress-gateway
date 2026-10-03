@@ -29,7 +29,6 @@ import (
 	"github.com/egress-gateway/egress-gateway/config"
 	"github.com/egress-gateway/egress-gateway/internal/request"
 	opabundle "github.com/open-policy-agent/opa/v1/bundle"
-	opastatus "github.com/open-policy-agent/opa/v1/plugins/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	health "google.golang.org/grpc/health/grpc_health_v1"
@@ -463,6 +462,14 @@ func (s *imagePolicySource) replace(raw []byte, status int) {
 	s.raw, s.status = raw, status
 }
 
+type imageNativeStatus struct {
+	Type    string `json:"type"`
+	Bundles map[string]*struct {
+		ActiveRevision string `json:"active_revision"`
+		Code           string `json:"code"`
+	} `json:"bundles"`
+}
+
 func runImageNativeUpdates(t *testing.T, sources map[string]*imagePolicySource, workloadID, egressID, host string, client *http.Client) {
 	t.Helper()
 	containers := map[string]string{"workload": workloadID, "egress": egressID}
@@ -482,14 +489,11 @@ func runImageNativeUpdates(t *testing.T, sources map[string]*imagePolicySource, 
 		t.Helper()
 		until(t, 20*time.Second, func() bool {
 			raw := run(t, "docker", "logs", containers[role])
-			var latest opastatus.UpdateRequestV1
+			var latest imageNativeStatus
 			for line := range strings.SplitSeq(raw, "\n") {
-				var row struct {
-					Type string `json:"type"`
-					opastatus.UpdateRequestV1
-				}
+				var row imageNativeStatus
 				if json.Unmarshal([]byte(line), &row) == nil && row.Type == "openpolicyagent.org/status" {
-					latest = row.UpdateRequestV1
+					latest = row
 				}
 			}
 			status := latest.Bundles["workload"]

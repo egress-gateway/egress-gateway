@@ -18,8 +18,6 @@ import (
 	"github.com/egress-gateway/egress-gateway-policy/workload"
 	opabundle "github.com/open-policy-agent/opa/v1/bundle"
 	"github.com/open-policy-agent/opa/v1/plugins"
-	bundlestatus "github.com/open-policy-agent/opa/v1/plugins/bundle"
-	opastatus "github.com/open-policy-agent/opa/v1/plugins/status"
 	core "k8s.io/api/core/v1"
 )
 
@@ -85,32 +83,45 @@ func (s *scenario) publishPolicy(role, revision string, p workload.Policy) (publ
 	return s.publishBundle(role, revision, raw, 200)
 }
 
-func latestNativeStatus(raw string) (opastatus.UpdateRequestV1, bool) {
-	var latest opastatus.UpdateRequestV1
+// OPA's in-process Status includes error and metrics interfaces which cannot be
+// unmarshaled from JSON. Consume only the native wire fields needed as evidence.
+type nativeBundleStatus struct {
+	ActiveRevision           string          `json:"active_revision"`
+	LastRequest              time.Time       `json:"last_request"`
+	LastSuccessfulActivation time.Time       `json:"last_successful_activation"`
+	Code                     string          `json:"code,omitempty"`
+	Message                  string          `json:"message,omitempty"`
+	Errors                   json.RawMessage `json:"errors,omitempty"`
+}
+type nativeStatus struct {
+	Type    string                         `json:"type"`
+	Bundles map[string]*nativeBundleStatus `json:"bundles"`
+	Plugins map[string]*plugins.Status     `json:"plugins"`
+}
+
+func latestNativeStatus(raw string) (nativeStatus, bool) {
+	var latest nativeStatus
 	found := false
 	for line := range strings.SplitSeq(raw, "\n") {
-		var entry struct {
-			Type string `json:"type"`
-			opastatus.UpdateRequestV1
-		}
+		var entry nativeStatus
 		if json.Unmarshal([]byte(line), &entry) == nil && entry.Type == "openpolicyagent.org/status" && entry.Bundles["workload"] != nil {
-			latest, found = entry.UpdateRequestV1, true
+			latest, found = entry, true
 		}
 	}
 	return latest, found
 }
 
-func (s *scenario) waitNative(role, revision string, after time.Time, wantFailure bool) (bundlestatus.Status, error) {
+func (s *scenario) waitNative(role, revision string, after time.Time, wantFailure bool) (nativeBundleStatus, error) {
 	pod := "workload"
 	if role == "egress" {
 		pod = "deployment/egress"
 	}
 	deadline := time.Now().Add(30 * time.Second)
-	var last opastatus.UpdateRequestV1
+	var last nativeStatus
 	for {
 		raw, err := s.proxyLog(pod)
 		if err != nil {
-			return bundlestatus.Status{}, err
+			return nativeBundleStatus{}, err
 		}
 		if entry, ok := latestNativeStatus(raw); ok {
 			last = entry
@@ -129,11 +140,11 @@ func (s *scenario) waitNative(role, revision string, after time.Time, wantFailur
 			}
 		}
 		if time.Now().After(deadline) {
-			return bundlestatus.Status{}, fmt.Errorf("native %s revision=%s failure=%v not observed: %+v", role, revision, wantFailure, last.Bundles["workload"])
+			return nativeBundleStatus{}, fmt.Errorf("native %s revision=%s failure=%v not observed: %+v", role, revision, wantFailure, last.Bundles["workload"])
 		}
 		select {
 		case <-s.ctx.Done():
-			return bundlestatus.Status{}, s.ctx.Err()
+			return nativeBundleStatus{}, s.ctx.Err()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
