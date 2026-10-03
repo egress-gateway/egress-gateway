@@ -30,4 +30,4 @@ if body_request workload "$request_id" '{"action":"safe"}' > "$artifacts/fault/r
 printf '%s\n' "$request_exit" > "$artifacts/fault/request-exit.txt"
 origin_control "$request_id-after" > "$artifacts/fault/receiver-after.txt"
 gateway_absent=true
-fault_logs workload
+fault_logs workload "$request_id-after" false "$request_id"

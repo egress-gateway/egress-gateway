@@ -33,4 +33,6 @@ k -n gateway-test exec "$fault_pod" -c istio-proxy -- sh -ec 'grep -q "^State:.*
 if body_request workload "$request_id" '{"action":"safe"}' > "$artifacts/fault/response.txt" 2> "$artifacts/fault/request.stderr"; then request_exit=0; else request_exit=$?; fi
 printf '%s\n' "$request_exit" > "$artifacts/fault/request-exit.txt"
 origin_control "$request_id-after" > "$artifacts/fault/receiver-after.txt"
-fault_logs workload
+require_egress=false
+if [[ "$fault_role" == egress ]]; then require_egress=true; fi
+fault_logs workload "$request_id-after" "$require_egress" "$request_id"

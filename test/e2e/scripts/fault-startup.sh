@@ -29,4 +29,4 @@ k -n gateway-test get pod "$startup_pod" -o json > "$artifacts/fault/startup-rec
 body_request "$startup_pod" "$request_id-safe" '{"action":"safe"}' > "$artifacts/fault/recovery-safe.txt"
 body_request "$startup_pod" "$request_id-denied" '{"action":"egress-deny"}' > "$artifacts/fault/recovery-denied.txt"
 origin_control "$request_id-after" > "$artifacts/fault/receiver-after.txt"
-fault_logs "$startup_pod"
+fault_logs "$startup_pod" "$request_id-after" true "$request_id-safe" "$request_id-denied"
