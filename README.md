@@ -55,7 +55,7 @@ examples/local/        Reproducible local request path and test-only policies
 docs/                  Architecture, extensions, configuration, and compatibility
 ```
 
-`internal/request` supplies the private HTTPS target guard. Trusted identity uses
+`internal/request` supplies the private HTTP/HTTPS target guard. Trusted identity uses
 the official OPA plugin input from verified TLS; no public policy DTO is introduced.
 `internal/identity` and `internal/artifacts` retain ownership documentation.
 
@@ -74,3 +74,7 @@ That library has no usable version yet, so this scaffold adds no placeholder `re
 - [Contributing](CONTRIBUTING.md)
 
 Gateway owns its kind/Istio integration fixture and [trusted composition boundary](docs/enrollment.md). Calico installation and platform permission validation belong in networking; admission and resource lifecycle belong in the controller or static consumer. Local image tests do not establish real mesh identity or network confinement.
+
+The [kind BDD suite](test/e2e/README.md) exercises body authorization at both roles,
+business/init protocol confinement, authenticated gateway entrypoints and observed
+fault recovery using real Istiod, Istio CNI and Calico.

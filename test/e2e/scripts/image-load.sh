@@ -4,11 +4,12 @@ require docker kind
 verify_owner
 docker build -f "$root/image/Dockerfile" -t "$image" "$root"
 docker build -f "$root/examples/local/upstream/Dockerfile" -t "$image-origin" "$root"
+docker build -f "$root/test/e2e/probe/Dockerfile" -t "$image-probe" "$root"
 docker pull "$CURL_IMAGE"
 # Let the kubelet pull the pinned Collector digest directly. Docker's archive of
 # a digest-only reference can leave a temporary import name in containerd's CRI
 # cache; kind then removes that name and container creation fails.
-kind load docker-image --name "$cluster" "$image" "$image-origin" "$CURL_IMAGE"
+kind load docker-image --name "$cluster" "$image" "$image-origin" "$image-probe" "$CURL_IMAGE"
 docker image inspect --format '{{.Id}}' "$image" > "$artifacts/gateway-image-id.txt"
 git -C "$root" rev-parse HEAD > "$artifacts/code-head.txt"
 git -C "$root" status --porcelain > "$artifacts/code-status.txt"

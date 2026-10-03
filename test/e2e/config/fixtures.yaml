@@ -108,6 +108,10 @@ items:
       - exec sleep 2147483647
       image: ${CURL_TEST_IMAGE}
       name: curl
+      volumeMounts:
+      - name: receiver-trust
+        mountPath: /etc/receiver-trust
+        readOnly: true
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:
@@ -126,106 +130,11 @@ items:
         capabilities:
           drop: [ALL]
     serviceAccountName: workload
+    volumes:
+    - name: receiver-trust
+      configMap:
+        name: receiver-trust
     terminationGracePeriodSeconds: 20
-- apiVersion: networking.istio.io/v1
-  kind: Gateway
-  metadata:
-    name: egress
-    namespace: gateway-test
-  spec:
-    selector:
-      app: egress
-    servers:
-    - hosts:
-      - origin.gateway-origin.svc.cluster.local
-      port:
-        name: https-mesh
-        number: 8080
-        protocol: HTTPS
-      tls:
-        mode: ISTIO_MUTUAL
-    - hosts:
-      - '*'
-      port:
-        name: https-inspection
-        number: 8443
-        protocol: HTTPS
-      tls:
-        mode: ISTIO_MUTUAL
-- apiVersion: networking.istio.io/v1
-  kind: DestinationRule
-  metadata:
-    name: egress
-    namespace: gateway-test
-  spec:
-    host: egress.gateway-test.svc.cluster.local
-    trafficPolicy:
-      portLevelSettings:
-      - port:
-          number: 8443
-        tls:
-          mode: ISTIO_MUTUAL
-          sni: inspection.mesh
-          subjectAltNames:
-          - spiffe://cluster.local/ns/gateway-test/sa/egress
-      tls:
-        mode: ISTIO_MUTUAL
-        sni: origin.gateway-origin.svc.cluster.local
-        subjectAltNames:
-        - spiffe://cluster.local/ns/gateway-test/sa/egress
-- apiVersion: networking.istio.io/v1
-  kind: VirtualService
-  metadata:
-    name: origin-via-egress
-    namespace: gateway-test
-  spec:
-    gateways:
-    - mesh
-    - egress
-    hosts:
-    - origin.gateway-origin.svc.cluster.local
-    http:
-    - match:
-      - gateways:
-        - mesh
-        port: 80
-      route:
-      - destination:
-          host: egress.gateway-test.svc.cluster.local
-          port:
-            number: 8080
-    - match:
-      - gateways:
-        - egress
-        port: 8080
-      route:
-      - destination:
-          host: origin.gateway-origin.svc.cluster.local
-          port:
-            number: 80
-- apiVersion: networking.istio.io/v1alpha3
-  kind: EnvoyFilter
-  metadata:
-    name: trace-request-id
-    namespace: gateway-test
-  spec:
-    configPatches:
-    - applyTo: NETWORK_FILTER
-      match:
-        context: GATEWAY
-        listener:
-          filterChain:
-            filter:
-              name: envoy.filters.network.http_connection_manager
-      patch:
-        operation: MERGE
-        value:
-          typed_config:
-            '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-            preserve_external_request_id: true
-    workloadSelector:
-      labels:
-        app: egress
 - apiVersion: apps/v1
   kind: Deployment
   metadata:
@@ -277,37 +186,4 @@ items:
       targetPort: 8443
     selector:
       app: origin-https
-- apiVersion: networking.istio.io/v1
-  kind: VirtualService
-  metadata:
-    name: inspection-egress
-    namespace: gateway-test
-  spec:
-    gateways:
-    - egress
-    hosts:
-    - '*'
-    http:
-    - match:
-      - port: 8443
-      retries:
-        attempts: 0
-      route:
-      - destination:
-          host: origin-https.gateway-origin.svc.cluster.local
-          port:
-            number: 443
-- apiVersion: networking.istio.io/v1
-  kind: Sidecar
-  metadata:
-    name: workload
-    namespace: gateway-test
-  spec:
-    egress:
-    - hosts:
-      - gateway-test/*
-      - gateway-origin/origin.gateway-origin.svc.cluster.local
-    workloadSelector:
-      labels:
-        app: workload
 kind: List

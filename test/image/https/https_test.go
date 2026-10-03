@@ -62,6 +62,7 @@ func runHTTPS(t *testing.T, tracingMode string) {
 	issue(t, state, mesh, "workload", nil, "spiffe://fixture.test/ns/gateway/sa/workload")
 	issue(t, state, origins, "origin", []string{"*.origin.test"}, "")
 	issue(t, state, other, "untrusted", []string{"*.origin.test"}, "")
+	issue(t, state, other, "forged-workload", nil, "spiffe://fixture.test/ns/gateway/sa/workload")
 	// Each role receives only its own key and the independent trust roots.
 	mountCerts := func(names ...string) []string {
 		var args []string
@@ -94,6 +95,29 @@ func runHTTPS(t *testing.T, tracingMode string) {
 	startProxy := func(role string) string {
 		envoyConfig := filepath.Join(fixture, role+"-envoy.json")
 		opaConfig := filepath.Join(root, "examples/local", role+"-opa.yaml")
+		// Istio's mesh listeners can resume authenticated sessions. Exercise that
+		// configuration while retaining mandatory certificate chain verification.
+		if role == "egress" && tracingMode == "" {
+			raw, err := os.ReadFile(envoyConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var bootstrap map[string]any
+			if err = json.Unmarshal(raw, &bootstrap); err != nil {
+				t.Fatal(err)
+			}
+			listener := bootstrap["static_resources"].(map[string]any)["listeners"].([]any)[0].(map[string]any)
+			chain := listener["filter_chains"].([]any)[0].(map[string]any)
+			tlsContext := chain["transport_socket"].(map[string]any)["typed_config"].(map[string]any)
+			tlsContext["disable_stateless_session_resumption"] = false
+			tlsContext["disable_stateful_session_resumption"] = false
+			raw, err = json.Marshal(bootstrap)
+			if err != nil {
+				t.Fatal(err)
+			}
+			envoyConfig = filepath.Join(state, "egress-resumption.json")
+			writeFixture(t, envoyConfig, raw)
+		}
 		if tracingMode == "disabled" {
 			raw, err := os.ReadFile(opaConfig)
 			if err != nil {
@@ -281,6 +305,77 @@ func runHTTPS(t *testing.T, tracingMode string) {
 		defer response.Body.Close()
 		if response.StatusCode != 403 {
 			t.Fatalf("spoofed principal authorized: %d", response.StatusCode)
+		}
+	})
+
+	t.Run("untrusted-client-cannot-claim-workload", func(t *testing.T) {
+		meshRoots := x509.NewCertPool()
+		raw, err := os.ReadFile(filepath.Join(state, "mesh-ca.pem"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		meshRoots.AppendCertsFromPEM(raw)
+		identity, err := tls.LoadX509KeyPair(filepath.Join(state, "forged-workload.pem"), filepath.Join(state, "forged-workload-key.pem"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		address := published(t, egress)
+		transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: meshRoots, ServerName: "egress", GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &identity, nil }, MinVersion: tls.VersionTLS12}, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", address)
+		}}
+		defer transport.CloseIdleConnections()
+		req, _ := http.NewRequestWithContext(t.Context(), "POST", "https://"+host+":8443/body", strings.NewReader(`{"action":"safe"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Request-Id", "https-denied-forged-workload")
+		response, err := (&http.Client{Transport: transport, Timeout: 5 * time.Second}).Do(req)
+		if err == nil {
+			response.Body.Close()
+			t.Fatalf("untrusted client reached HTTP: %d", response.StatusCode)
+		}
+	})
+
+	t.Run("verified-session-resumption-retains-authorization", func(t *testing.T) {
+		meshRoots := x509.NewCertPool()
+		raw, err := os.ReadFile(filepath.Join(state, "mesh-ca.pem"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		meshRoots.AppendCertsFromPEM(raw)
+		identity, err := tls.LoadX509KeyPair(filepath.Join(state, "workload.pem"), filepath.Join(state, "workload-key.pem"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		address := published(t, egress)
+		transport := &http.Transport{DisableKeepAlives: true, TLSClientConfig: &tls.Config{RootCAs: meshRoots, ServerName: "egress", Certificates: []tls.Certificate{identity}, ClientSessionCache: tls.NewLRUClientSessionCache(1), MinVersion: tls.VersionTLS13}, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", address)
+		}}
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+		for i, action := range []string{"safe", "safe", "egress-deny", "safe"} {
+			req, _ := http.NewRequestWithContext(t.Context(), "POST", "https://"+host+":8443/body", strings.NewReader(fmt.Sprintf(`{"action":%q}`, action)))
+			req.Header.Set("Content-Type", "application/json")
+			id := fmt.Sprintf("https-resumed-%d", i)
+			want := 200
+			if action != "safe" {
+				want = 403
+				id = "https-denied-resumed"
+			}
+			req.Header.Set("X-Request-Id", id)
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.StatusCode != want {
+				t.Fatalf("request %d resumed=%v status=%d body=%s", i, response.TLS.DidResume, response.StatusCode, data)
+			}
+			if i > 0 && !response.TLS.DidResume {
+				t.Fatalf("request %d did not exercise TLS session resumption", i)
+			}
 		}
 	})
 
