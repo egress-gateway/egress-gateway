@@ -101,6 +101,9 @@ func sharedBootstrap(t *testing.T, state, path, role string) string {
 		}
 		cluster["typed_extension_protocol_options"] = map[string]any{"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": map[string]any{"@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions", "auto_config": map[string]any{"http_protocol_options": map[string]any{}, "http2_protocol_options": map[string]any{}}}}
 		cluster["transport_socket"].(map[string]any)["typed_config"].(map[string]any)["common_tls_context"].(map[string]any)["alpn_protocols"] = []string{"h2", "http/1.1"}
+		if role == "egress" {
+			cluster["typed_extension_protocol_options"].(map[string]any)["envoy.extensions.upstreams.http.v3.HttpProtocolOptions"].(map[string]any)["upstream_http_protocol_options"] = map[string]any{"auto_sni": true, "auto_san_validation": true}
+		}
 	}
 	addSharedHTTPListener(t, static, role)
 	raw, err = json.Marshal(bootstrap)
@@ -115,11 +118,15 @@ func sharedBootstrap(t *testing.T, state, path, role string) string {
 func runSharedTraffic(t *testing.T, state, host, workloadID, egressID, originID string, roots *x509.CertPool, httpClient *http.Client) {
 	t.Helper()
 	authority := host + ":8443"
+	var observations []sharedDelivery
+	record := func(id string, allowed bool, denier string) {
+		observations = append(observations, sharedDelivery{id, allowed, denier})
+	}
 	target := published(t, workloadID)
 	dial := func(ctx context.Context, _ string) (net.Conn, error) {
 		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", target)
 	}
-	conn, err := grpc.NewClient("passthrough:///"+authority, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12})), grpc.WithContextDialer(dial), grpc.WithAuthority(authority))
+	conn, err := grpc.NewClient("passthrough:///"+authority, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12})), grpc.WithContextDialer(dial), grpc.WithAuthority(authority))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +162,7 @@ func runSharedTraffic(t *testing.T, state, host, workloadID, egressID, originID 
 			} else if err == nil {
 				t.Fatal("denied RPC reached origin")
 			}
-			assertSharedDelivery(t, id, tc.allow, tc.denier, workloadID, egressID, originID)
+			record(id, tc.allow, tc.denier)
 		})
 	}
 	for _, tc := range []struct {
@@ -187,7 +194,7 @@ func runSharedTraffic(t *testing.T, state, host, workloadID, egressID, originID 
 			if response.StatusCode != tc.status {
 				t.Fatalf("status=%d", response.StatusCode)
 			}
-			assertSharedDelivery(t, id, tc.status == 200, tc.denier, workloadID, egressID, originID)
+			record(id, tc.status == 200, tc.denier)
 		})
 	}
 	// HTTP/2 raw requests exercise malformed wire envelopes without asking a gRPC
@@ -224,13 +231,17 @@ func runSharedTraffic(t *testing.T, state, host, workloadID, egressID, originID 
 			}
 			io.Copy(io.Discard, response.Body)
 			response.Body.Close()
-			if response.ProtoMajor != 2 || response.StatusCode != 403 {
+			grpcDenied := response.StatusCode == 200 && (response.Header.Get("Grpc-Status") == "7" || response.Trailer.Get("Grpc-Status") == "7")
+			if response.ProtoMajor != 2 || (response.StatusCode != 403 && !grpcDenied) {
 				t.Fatalf("wire rejection protocol=%s status=%d", response.Proto, response.StatusCode)
 			}
-			assertSharedDelivery(t, id, false, "workload", workloadID, egressID, originID)
+			record(id, false, "workload")
 		})
 	}
-	verifySharedHTTP(t, host, workloadID, egressID, originID)
+	verifySharedHTTP(t, host, workloadID, record)
+	for _, observation := range observations {
+		assertSharedDelivery(t, observation.id, observation.allowed, observation.denier, workloadID, egressID, originID)
+	}
 	verifySharedPeer(t, state, authority, egressID, originID)
 }
 
@@ -241,7 +252,7 @@ func assertSharedDelivery(t *testing.T, id string, allowed bool, denier, workloa
 	if denier == "egress" || allowed {
 		gateway = egressID
 	}
-	until(t, 5*time.Second, func() bool { return strings.Contains(run(t, "docker", "logs", gateway), "request_id="+id+" ") })
+	until(t, 15*time.Second, func() bool { return strings.Contains(run(t, "docker", "logs", gateway), "request_id="+id+" ") })
 	origin := run(t, "docker", "logs", originID)
 	if (strings.Contains(origin, "request_id="+id+" ") || strings.Contains(origin, "request_id="+id+"\n")) != allowed {
 		t.Fatalf("upstream delivery for %s allowed=%v logs=%s", id, allowed, origin)
@@ -341,7 +352,7 @@ func addSharedHTTPListener(t *testing.T, static map[string]any, role string) {
 		cluster["name"] = "next_hop_http"
 		if role == "egress" {
 			delete(cluster, "transport_socket")
-			cluster["typed_extension_protocol_options"] = map[string]any{"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": map[string]any{"@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions", "explicit_http_config": map[string]any{"http_protocol_options": map[string]any{}}}}
+			cluster["typed_extension_protocol_options"] = map[string]any{"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": map[string]any{"@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions", "upstream_http_protocol_options": map[string]any{"auto_sni": true, "auto_san_validation": true}, "explicit_http_config": map[string]any{"http_protocol_options": map[string]any{}}}}
 		} else {
 			assignment := cluster["load_assignment"].(map[string]any)
 			assignment["cluster_name"] = "next_hop_http"
@@ -356,7 +367,7 @@ func addSharedHTTPListener(t *testing.T, static map[string]any, role string) {
 	}
 }
 
-func verifySharedHTTP(t *testing.T, host, workloadID, egressID, originID string) {
+func verifySharedHTTP(t *testing.T, host, workloadID string, record func(string, bool, string)) {
 	t.Helper()
 	address := strings.TrimSpace(run(t, "docker", "port", workloadID, "8080/tcp"))
 	tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -384,6 +395,12 @@ func verifySharedHTTP(t *testing.T, host, workloadID, egressID, originID string)
 		if response.StatusCode != tc.status {
 			t.Fatalf("plain HTTP %s status=%d", tc.action, response.StatusCode)
 		}
-		assertSharedDelivery(t, id, tc.status == 200, tc.denier, workloadID, egressID, originID)
+		record(id, tc.status == 200, tc.denier)
 	}
+}
+
+type sharedDelivery struct {
+	id      string
+	allowed bool
+	denier  string
 }

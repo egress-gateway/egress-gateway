@@ -17,6 +17,7 @@ import (
 	"github.com/open-policy-agent/opa/v1/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestSharedBundleThroughOfficialAuthorizationService(t *testing.T) {
@@ -87,7 +88,7 @@ func TestSharedBundleThroughOfficialAuthorizationService(t *testing.T) {
 		allow bool
 	}{{`{"model":"good"}`, true}, {`{"model":"bad"}`, false}, {`{"model":"good","model":"bad"}`, false}, {``, false}} {
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		response, err := client.Check(ctx, &auth.CheckRequest{Attributes: &auth.AttributeContext{Request: &auth.AttributeContext_Request{Http: &auth.AttributeContext_HttpRequest{Host: "api.example:443", Method: "POST", Path: "/v1/chat", RawBody: []byte(tc.body), HeaderMap: &core.HeaderMap{Headers: []*core.HeaderValue{{Key: "content-type", RawValue: []byte("application/json")}}}}}}}, grpc.WaitForReady(true))
+		response, err := client.Check(ctx, &auth.CheckRequest{Attributes: &auth.AttributeContext{Request: &auth.AttributeContext_Request{Time: timestamppb.Now(), Http: &auth.AttributeContext_HttpRequest{Host: "api.example:443", Method: "POST", Path: "/v1/chat", RawBody: []byte(tc.body), HeaderMap: &core.HeaderMap{Headers: []*core.HeaderValue{{Key: "content-type", RawValue: []byte("application/json")}}}}}}}, grpc.WaitForReady(true))
 		cancel()
 		if err != nil {
 			t.Fatal(err)

@@ -39,7 +39,16 @@ func inspect(a *adapter.Adapter) rego.Builtin1 {
 		if !ok {
 			return nil, fmt.Errorf("missing Envoy attributes")
 		}
-		raw, err := json.Marshal(map[string]any{"attributes": fields["attributes"]})
+		// The plugin's protobuf reflection map is not ProtoJSON for well-known
+		// types such as request.time. Decode only the request facts we consume.
+		attributes, _ := fields["attributes"].(map[string]any)
+		request, _ := attributes["request"].(map[string]any)
+		source, _ := attributes["source"].(map[string]any)
+		facts := map[string]any{"attributes": map[string]any{
+			"request": map[string]any{"http": request["http"]},
+			"source":  map[string]any{"principal": source["principal"]},
+		}}
+		raw, err := json.Marshal(facts)
 		if err != nil {
 			return nil, err
 		}

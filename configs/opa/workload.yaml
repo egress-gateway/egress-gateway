@@ -3,5 +3,5 @@ labels:
 plugins:
   envoy_ext_authz_grpc:
     addr: 127.0.0.1:9191
-    path: gateway/adapter/allow
+    path: envoy/authz/allow
     dry-run: false
