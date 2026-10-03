@@ -64,11 +64,12 @@ items:
             "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
             transport_api_version: V3
             failure_mode_allow: false
+            encode_raw_headers: true
             include_tls_session: true
             with_request_body:
               max_request_bytes: 65536
               allow_partial_message: false
-              pack_as_bytes: false
+              pack_as_bytes: true
             grpc_service:
               envoy_grpc:
                 cluster_name: opa
@@ -171,11 +172,12 @@ items:
             "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
             transport_api_version: V3
             failure_mode_allow: false
+            encode_raw_headers: true
             include_tls_session: true
             with_request_body:
               max_request_bytes: 65536
               allow_partial_message: false
-              pack_as_bytes: false
+              pack_as_bytes: true
             grpc_service:
               envoy_grpc:
                 cluster_name: opa

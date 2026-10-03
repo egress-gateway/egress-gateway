@@ -170,3 +170,41 @@ or prevented business execution, and allow/deny recovery checks. Fixtures use pr
 signals or Kubernetes lifecycle actions, with restoration traps; the product has
 no fault-control API. Proxy-absence recovery also requires an observed restart and
 readiness. Retained `test` runs recreate case-specific Pods and restore shared ones.
+
+## Shared HTTP and gRPC policy
+
+The static consumer builds each role's archive using the pinned policy library's
+`bundle.Build`. It stages that archive, runtime JSON and two independent Health
+service descriptor views in role ConfigMaps before creating consumers. Only the
+managed proxy mounts those inputs. Egress separately admits the workload service
+account's verified SPIFFE identity. Reusing an environment checks that the staged
+ConfigMap bytes match setup; changed inputs require restoration or fresh setup.
+
+`@shared` exercises JSON payloads, Header/Query selection and actual TLS/HTTP2
+unary gRPC with payload and text metadata constraints. The two descriptors assign
+different JSON names to the same field, so both matching decoder references must
+work. The HTTP carrier and gRPC requirements apply together. Tests distinguish
+all-value `In`/`NotIn`, `Exists`, repeated values, missing/null/empty selections,
+escaped JSON pointers, array indices and empty object keys. Host cases exercise exact matches, child names and near-suffix nonmatches over
+HTTP. Two exact DNS rewrites in this owned test cluster point child names at the
+same controlled Services without changing the HTTP authority; explicit mesh host
+routes retain the normal proxy path. The protected origin
+records the actual RPC method as well as the request identifier.
+
+Malformed JSON, duplicate keys, trailing data, missing/truncated/extra gRPC frames,
+compression, unsupported streaming payload inspection and oversized bodies are
+rejected. A successful independent RPC control brackets every attempt against the
+same healthy origin Pod. Shared-policy denials require the responsible proxy's
+`ext_authz_denied` event, both-hop correlation where appropriate, verified peer
+identity, and absence of the protected operation. A transport error alone fails.
+
+Case-specific startup Pods prove that missing/invalid bundles and missing,
+digest-mismatched, wrong-method or unresolved-import descriptors terminate Gateway
+startup before the business container starts. Explicit empty bundles allow the
+request while a valid mesh certificate from an unadmitted service account still
+fails egress admission. The normal policies and Pods are restored afterward.
+
+The `fixture.*` Rego files are used only while the target-mutation scenario
+explicitly switches both roles into that fault mode. All other governed requests
+use the shared library's baseline. That scenario restores the saved shared
+configuration and requires the post-authorization guard's actual mutation denial.

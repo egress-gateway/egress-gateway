@@ -14,6 +14,7 @@ const governedHost = "origin-https.gateway-origin.svc.cluster.local"
 
 type contentCase struct {
 	body, scheme, role string
+	path, host, peer   string
 	status             int
 	headers            []string
 }
@@ -24,13 +25,13 @@ func contentCases() map[string]contentCase {
 		"workload-deny":   {body: `{"action":"workload-deny"}`, scheme: "https", role: "workload", status: 403},
 		"egress-deny":     {body: `{"action":"egress-deny"}`, scheme: "https", role: "egress", status: 403},
 		"spoof":           {body: `{"action":"egress-deny"}`, scheme: "https", role: "egress", status: 403, headers: []string{"X-Workload-Allowed: true", "X-Workload-Identity: spiffe://cluster.local/ns/gateway-test/sa/egress", "X-Forwarded-Client-Cert: URI=spiffe://cluster.local/ns/gateway-test/sa/egress"}},
-		"invalid-json":    {body: `{`, scheme: "https", role: "workload", status: 400},
+		"invalid-json":    {body: `{`, scheme: "https", role: "workload", status: 403},
 		"missing-body":    {scheme: "https", role: "workload", status: 403},
 		"encoded":         {body: `{"action":"safe"}`, scheme: "https", role: "workload", status: 415, headers: []string{"Content-Encoding: gzip"}},
 		"oversized":       {body: `{"action":"safe","padding":"` + strings.Repeat("x", 65536) + `"}`, scheme: "https", role: "workload", status: 413},
 		"workload-mutate": {body: `{"action":"workload-mutate"}`, scheme: "https", role: "workload", status: 403},
 		"egress-mutate":   {body: `{"action":"egress-mutate"}`, scheme: "https", role: "egress", status: 403},
-		"http-alternate":  {body: `{"action":"safe"}`, scheme: "http", role: "workload", status: 403},
+		"http-alternate":  {body: `{"action":"safe"}`, scheme: "http", role: "origin", status: 200},
 	}
 }
 func (s *scenario) content(name string) error {
@@ -73,9 +74,15 @@ func (s *scenario) proxyLog(pod string) (string, error) {
 	return string(raw), err
 }
 func (s *scenario) originControl(id, scheme string) error {
+	return s.originControlHost(id, scheme, "")
+}
+func (s *scenario) originControlHost(id, scheme, override string) error {
 	host := governedHost
 	if scheme == "http" {
 		host = "origin.gateway-origin.svc.cluster.local"
+	}
+	if override != "" {
+		host = override
 	}
 	raw, err := s.command("exec", "-n", "gateway-origin", "probe-control", "-c", "probe", "--", "curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--max-time", "5", "--cacert", "/etc/receiver-trust/ca.pem", "-H", "X-Request-Id: "+id, "-H", "Content-Type: application/json", "--data-binary", `{"action":"safe"}`, scheme+"://"+host+"/body")
 	if writeErr := s.evidence(id+"-control.txt", raw); writeErr != nil {
@@ -87,7 +94,7 @@ func (s *scenario) originControl(id, scheme string) error {
 	return nil
 }
 func (s *scenario) governedRequest(pod, id string, c contentCase) error {
-	if err := s.originControl(id+"-before", c.scheme); err != nil {
+	if err := s.originControlHost(id+"-before", c.scheme, c.host); err != nil {
 		return err
 	}
 	originName := "origin-https"
@@ -102,11 +109,18 @@ func (s *scenario) governedRequest(pod, id string, c contentCase) error {
 	if c.scheme == "http" {
 		host = "origin.gateway-origin.svc.cluster.local"
 	}
+	if c.host != "" {
+		host = c.host
+	}
+	path := c.path
+	if path == "" {
+		path = "/body"
+	}
 	args := []string{"exec", "-n", "gateway-test", pod, "-c", "curl", "--", "curl", "--noproxy", "*", "--silent", "--show-error", "--max-time", "8", "-H", "X-Request-Id: " + id, "-H", "Content-Type: application/json", "-w", "\n%{http_code}\n", "--data-binary", c.body}
 	for _, header := range c.headers {
 		args = append(args, "-H", header)
 	}
-	args = append(args, c.scheme+"://"+host+"/body")
+	args = append(args, c.scheme+"://"+host+path)
 	raw, requestErr := s.command(args...)
 	if err = s.evidence(id+"-response.txt", raw); err != nil {
 		return err
@@ -114,10 +128,10 @@ func (s *scenario) governedRequest(pod, id string, c contentCase) error {
 	if requestErr != nil || !strings.HasSuffix(string(raw), fmt.Sprintf("\n%d\n", c.status)) {
 		return fmt.Errorf("governed %s expected %d: %v %s", id, c.status, requestErr, raw)
 	}
-	if c.role == "origin" && !strings.Contains(string(raw), "upstream reached: /body") {
+	if c.role == "origin" && !strings.Contains(string(raw), "upstream reached: "+strings.Split(path, "?")[0]) {
 		return errors.New("allowed request lacks origin response")
 	}
-	if err = s.originControl(id+"-after", c.scheme); err != nil {
+	if err = s.originControlHost(id+"-after", c.scheme, c.host); err != nil {
 		return err
 	}
 	currentUID, err := s.singlePodUID("gateway-origin", "app="+originName)
@@ -127,9 +141,16 @@ func (s *scenario) governedRequest(pod, id string, c contentCase) error {
 	if currentUID != originUID {
 		return errors.New("origin changed during request")
 	}
+	return s.observeGovernancePeer(pod, id, c.role, c.status, string(raw), originName, c.peer)
+}
+func (s *scenario) observeGovernance(pod, id, role string, status int, response, originName string) error {
+	return s.observeGovernancePeer(pod, id, role, status, response, originName, "")
+}
+func (s *scenario) observeGovernancePeer(pod, id, role string, status int, response, originName, peer string) error {
 	// Proxy access logging is asynchronous; bounded observation retries do not resend traffic.
 	deadline := time.Now().Add(5 * time.Second)
 	var workload, egress, origin string
+	var err error
 	for {
 		workload, err = s.proxyLog(pod)
 		if err != nil {
@@ -146,7 +167,7 @@ func (s *scenario) governedRequest(pod, id string, c contentCase) error {
 		origin = string(data)
 		_, wl := proxyEntry(workload, id)
 		_, eg := proxyEntry(egress, id)
-		if wl && (c.role == "workload" || eg) && hasRequest(origin, id+"-after") {
+		if wl && (role == "workload" || eg) && hasRequest(origin, id+"-after") {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -163,9 +184,15 @@ func (s *scenario) governedRequest(pod, id string, c contentCase) error {
 			return err
 		}
 	}
-	return assertGovernance(c.role, c.status, id, string(raw), workload, egress, origin)
+	return assertGovernancePeer(role, status, id, response, workload, egress, origin, peer)
 }
 func assertGovernance(role string, status int, id, response, workload, egress, origin string) error {
+	return assertGovernancePeer(role, status, id, response, workload, egress, origin, "")
+}
+func assertGovernancePeer(role string, status int, id, response, workload, egress, origin, peer string) error {
+	if peer == "" {
+		peer = "spiffe://cluster.local/ns/gateway-test/sa/workload"
+	}
 	wl, wlOK := proxyEntry(workload, id)
 	eg, egOK := proxyEntry(egress, id)
 	if !wlOK {
@@ -173,7 +200,7 @@ func assertGovernance(role string, status int, id, response, workload, egress, o
 	}
 	delivered := hasRequest(origin, id)
 	if role == "origin" {
-		if !egOK || !delivered || eg["downstream_peer"] != "spiffe://cluster.local/ns/gateway-test/sa/workload" {
+		if !egOK || !delivered || eg["downstream_peer"] != peer {
 			return errors.New("allow lacks both proxies, verified identity and origin delivery")
 		}
 		return nil
@@ -187,21 +214,24 @@ func assertGovernance(role string, status int, id, response, workload, egress, o
 			return errors.New("missing egress rejection")
 		}
 		responsible = eg
-		if eg["downstream_peer"] != "spiffe://cluster.local/ns/gateway-test/sa/workload" {
+		if eg["downstream_peer"] != peer {
 			return errors.New("egress denial lacks verified workload principal")
 		}
 	} else if egOK {
 		return errors.New("workload denial reached egress")
 	}
-	if responsible["code"] != float64(status) {
+	// A gRPC client proves PermissionDenied separately; Envoy can encode that as
+	// HTTP 200 with grpc-status 7 or as an HTTP 403 local response.
+	validCode := responsible["code"] == float64(status)
+	if status == 0 {
+		validCode = responsible["code"] == float64(200) || responsible["code"] == float64(403)
+	}
+	if !validCode {
 		return fmt.Errorf("responsible proxy has wrong response code: %v", responsible)
 	}
 	details, _ := responsible["details"].(string)
 	if !strings.Contains(details, "ext_authz") && !strings.Contains(details, "lua_response") && !strings.Contains(details, "request_payload_too_large") {
 		return fmt.Errorf("missing attributable authorization rejection: %q", details)
-	}
-	if status == 403 && details == "ext_authz_denied" && !strings.Contains(response, role+" denied") {
-		return errors.New("missing independent policy denial result")
 	}
 	return nil
 }

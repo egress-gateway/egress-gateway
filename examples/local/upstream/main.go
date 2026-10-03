@@ -39,13 +39,19 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
-// healthServer is a controlled unary operation; the service string is test data.
+// healthServer records protected operations and provides healthy RPC controls.
 type healthServer struct {
 	health.UnimplementedHealthServer
 }
 
 func (*healthServer) Check(ctx context.Context, req *health.HealthCheckRequest) (*health.HealthCheckResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	log.Printf("origin rpc=grpc.health.v1.Health/Check request_id=%s service=%s", strings.Join(md.Get("x-request-id"), ","), req.Service)
+	log.Printf("origin rpc=grpc.health.v1.Health/Check request_id=%s", strings.Join(md.Get("x-request-id"), ","))
 	return &health.HealthCheckResponse{Status: health.HealthCheckResponse_SERVING}, nil
+}
+
+func (*healthServer) Watch(_ *health.HealthCheckRequest, stream grpc.ServerStreamingServer[health.HealthCheckResponse]) error {
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	log.Printf("origin rpc=grpc.health.v1.Health/Watch request_id=%s", strings.Join(md.Get("x-request-id"), ","))
+	return stream.Send(&health.HealthCheckResponse{Status: health.HealthCheckResponse_SERVING})
 }

@@ -48,13 +48,19 @@ func record(e event) { b, _ := json.Marshal(e); logger.Print(string(b)) }
 
 func main() {
 	mode := flag.String("mode", "send", "send or serve")
-	protocol := flag.String("protocol", "tcp", "tcp, udp, dns, quic or mesh")
+	protocol := flag.String("protocol", "tcp", "tcp, udp, dns, quic, mesh, grpc or grpc-wire")
 	target := flag.String("target", "", "receiver address")
 	id := flag.String("id", "", "request identifier")
 	ca := flag.String("ca", "/etc/receiver-trust/ca.pem", "public receiver CA")
 	cert := flag.String("cert", "/tls/tls.crt", "receiver certificate")
 	key := flag.String("key", "/tls/tls.key", "receiver key")
 	timeout := flag.Duration("timeout", 3*time.Second, "attempt deadline")
+	rpcMethod := flag.String("rpc-method", "Check", "health RPC method")
+	payload := flag.String("payload", "safe", "health service value or base64 wire body")
+	contentType := flag.String("content-type", "application/grpc", "wire request content type")
+	encoding := flag.String("encoding", "", "wire gRPC encoding")
+	var metadata []string
+	flag.Func("metadata", "repeatable RPC metadata key=value", func(value string) error { metadata = append(metadata, value); return nil })
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -62,9 +68,17 @@ func main() {
 	if *mode == "serve" {
 		err = serve(ctx, *cert, *key)
 	} else if *mode == "send" {
-		var e event
-		e, err = send(ctx, *protocol, *target, *id, *ca, *timeout)
-		record(e)
+		if *protocol == "grpc" || *protocol == "grpc-wire" {
+			var result rpcResult
+			result, err = probeRPC(ctx, rpcRequest{Target: *target, ID: *id, CA: *ca, Timeout: *timeout, Method: *rpcMethod, Payload: *payload, Metadata: metadata, Wire: *protocol == "grpc-wire", ContentType: *contentType, Encoding: *encoding})
+			if encodeErr := json.NewEncoder(os.Stdout).Encode(result); err == nil {
+				err = encodeErr
+			}
+		} else {
+			var e event
+			e, err = send(ctx, *protocol, *target, *id, *ca, *timeout)
+			record(e)
+		}
 	} else {
 		err = errors.New("unknown mode")
 	}

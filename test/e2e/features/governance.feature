@@ -16,6 +16,7 @@ Feature: Independent authorization in the deployed Istio request path
       | missing-body    |
       | encoded         |
       | oversized       |
-      | workload-mutate |
-      | egress-mutate   |
       | http-alternate  |
+
+  Scenario: Authorization response mutation cannot change the forwarding target
+    When the deployed mutation-only authorization fixture tries to change the target

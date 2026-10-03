@@ -2,6 +2,9 @@
 source "$(dirname "$0")/common.sh"
 require kubectl envsubst openssl go
 verify_owner
+# Exact fixture DNS aliases preserve the HTTP authority while mapping child
+# names to the same origin Service; this distinguishes Exact from DomainSuffix.
+"$BASH" "$root/test/e2e/scripts/host-aliases.sh" --root "$root" --cluster "$cluster" --kubeconfig "$kubeconfig" --image "$image" --config-dir "$config_dir" --artifacts "$artifacts" --state-dir "$state_dir"
 # Fixture origin credentials stay in private state and are never diagnostics.
 for ns in gateway-test gateway-origin; do
   k create namespace "$ns" --dry-run=client -o yaml | k apply -f -
@@ -20,7 +23,7 @@ mkdir -m 0700 "$origin_tls"
 k create secret tls origin-tls -n gateway-origin --cert="$origin_tls/tls.crt" --key="$origin_tls/tls.key" --dry-run=client -o yaml | k apply -f -
 k create configmap origin-trust -n gateway-test --from-file=ca.pem="$origin_tls/ca.pem" --dry-run=client -o yaml | k apply -f -
 for role in workload egress; do
-  k create configmap "$role-policy" -n gateway-test --from-file=policy.rego="$config_dir/$role.rego" --dry-run=client -o yaml | k apply -f -
+  k create configmap "$role-policy" -n gateway-test --from-file=policy.rego="$config_dir/$role.rego" --from-file=opa.yaml="$config_dir/fault-opa.yaml" --dry-run=client -o yaml | k apply -f -
 done
 k -n istio-system get configmap istio-ca-root-cert -o jsonpath='{.data.root-cert\.pem}' > "$state_dir/mesh-public-root.pem"
 for ns in gateway-test gateway-origin; do
@@ -41,6 +44,7 @@ k apply -f "$config_dir/routes.yaml"
 k apply -f "$config_dir/https.yaml"
 k apply -f "$config_dir/authorization.yaml"
 k apply -f "$artifacts/rendered-fixtures.yaml"
+k get configmap workload-shared egress-shared -n gateway-test -o json | jq -S '[.items[] | {name:.metadata.name,data,binaryData}] | sort_by(.name)' > "$artifacts/shared-artifacts.json"
 k rollout status deployment/origin-https -n gateway-origin --timeout=180s
 k rollout status deployment/origin -n gateway-origin --timeout=180s
 k rollout status deployment/egress -n gateway-test --timeout=180s

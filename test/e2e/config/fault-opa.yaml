@@ -1,0 +1,5 @@
+# Used only while exercising mutation responses from the authorization service.
+plugins:
+  envoy_ext_authz_grpc:
+    path: envoy/authz/allow
+    skip-request-body-parse: true

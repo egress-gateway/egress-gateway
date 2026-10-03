@@ -1,6 +1,7 @@
 package suite
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 	"github.com/open-policy-agent/opa/v1/rego"
 )
 
-func TestFixtureIndependentBodyDecisions(t *testing.T) {
+func TestMutationFixtureDecisions(t *testing.T) {
 	for _, tc := range []struct {
 		role, action, principal, scheme string
 		allowed                         bool
@@ -28,7 +29,7 @@ func TestFixtureIndependentBodyDecisions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			input := map[string]any{"source_principal": tc.principal, "parsed_body": map[string]any{"action": tc.action}, "truncated_body": false, "attributes": map[string]any{"request": map[string]any{"http": map[string]any{"method": "POST", "scheme": tc.scheme, "path": "/body", "headers": map[string]any{"content-type": "application/json", "x-workload-allowed": "true", "x-workload-identity": "spiffe://cluster.local/ns/gateway-test/sa/workload"}}}}}
+			input := map[string]any{"source_principal": tc.principal, "parsed_body": map[string]any{"action": tc.action}, "truncated_body": false, "attributes": map[string]any{"request": map[string]any{"http": map[string]any{"raw_body": base64.StdEncoding.EncodeToString([]byte(`{"action":"` + tc.action + `"}`)), "method": "POST", "scheme": tc.scheme, "path": "/body", "headers": map[string]any{"content-type": "application/json", "x-workload-allowed": "true", "x-workload-identity": "spiffe://cluster.local/ns/gateway-test/sa/workload"}}}}}
 			results, err := rego.New(rego.Query("data.envoy.authz.allow"), rego.Module(tc.role+".rego", string(policy)), rego.Input(input)).Eval(t.Context())
 			if err != nil {
 				t.Fatal(err)
