@@ -98,6 +98,9 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	params.GracefulShutdownPeriod = 2
 	params.ReadyTimeout = 20
 	params.ConfigOverrides = []string{"plugins.envoy_ext_authz_grpc.addr=" + c.OPAAddress(), "plugins.envoy_ext_authz_grpc.dry-run=false", "plugins.envoy_ext_authz_grpc.enable-reflection=false"}
+	if err := prepareWorkload(c, &params); err != nil {
+		return fmt.Errorf("prepare workload policy: %w", err)
+	}
 	embedded, err := runtime.NewRuntime(ctx, params)
 	if err != nil {
 		return fmt.Errorf("initialize OPA: %w", err)

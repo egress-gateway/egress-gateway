@@ -1,5 +1,7 @@
 FROM golang:1.26.7-bookworm AS build
 WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY examples/local/upstream/main.go .
 RUN CGO_ENABLED=0 go build -trimpath -o /upstream main.go
 FROM scratch

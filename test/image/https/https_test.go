@@ -38,6 +38,10 @@ func TestHTTPSInspection(t *testing.T) {
 }
 
 func runHTTPS(t *testing.T, tracingMode string) {
+	runHTTPSMode(t, tracingMode, false)
+}
+
+func runHTTPSMode(t *testing.T, tracingMode string, shared bool) {
 	root, err := filepath.Abs("../../..")
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +134,9 @@ func runHTTPS(t *testing.T, tracingMode string) {
 		if tracingMode != "" {
 			envoyConfig = tracingBootstrap(t, state, envoyConfig, role, tracingMode != "disabled")
 		}
+		if shared {
+			envoyConfig = sharedBootstrap(t, state, envoyConfig, role)
+		}
 		args := []string{"-p", "127.0.0.1::8443", "-e", "GATEWAY_ROLE=" + role, "-e", "GATEWAY_PROXY_MODE=standalone", "-e", "ENVOY_CONFIG=/fixture/envoy.json", "-e", "OPA_CONFIG=/fixture/opa.yaml",
 			"-v", envoyConfig + ":/fixture/envoy.json:ro",
 			"-v", filepath.Join(fixture, role+".rego") + ":/fixture/policy.rego:ro",
@@ -138,7 +145,12 @@ func runHTTPS(t *testing.T, tracingMode string) {
 		if tracingMode != "" {
 			args = append(args, tracingEnvironment(state, role, tracingMode)...)
 		}
-		args = append(args, image, "--policy", "/fixture/policy.rego")
+		if shared {
+			stageSharedPolicy(t, state, role)
+			args = append(args, "-p", "127.0.0.1::8080", "-e", "GATEWAY_WORKLOAD_CONFIG=/policy/runtime.json", "-v", filepath.Join(state, role+"-policy")+":/policy:ro", image)
+		} else {
+			args = append(args, image, "--policy", "/fixture/policy.rego")
+		}
 		id := start(role, args...)
 		until(t, 30*time.Second, func() bool { return exec.Command("docker", "exec", id, "gateway-daemon", "ready").Run() == nil })
 		return id
@@ -199,6 +211,10 @@ func runHTTPS(t *testing.T, tracingMode string) {
 			t.Fatal(err)
 		}
 		return response.StatusCode, string(data), response.TLS
+	}
+	if shared {
+		runSharedTraffic(t, state, host, workload, egress, origin, roots, client)
+		return
 	}
 	var coldSerial string
 	if tracingMode != "" {
