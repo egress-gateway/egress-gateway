@@ -9,12 +9,12 @@ done
 origin_tls="$state_dir/origin-tls"
 mkdir -m 0700 "$origin_tls"
 (umask 077
-  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes -days 2 \
+  openssl req -sha256 -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes -days 2 \
     -subj '/CN=Gateway E2E origin root' -keyout "$origin_tls/ca.key" -out "$origin_tls/ca.pem" 2>/dev/null
-  openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
+  openssl req -sha256 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
     -subj '/CN=Gateway E2E origin' -keyout "$origin_tls/tls.key" -out "$origin_tls/tls.csr" 2>/dev/null
   printf '%s\n' 'subjectAltName=DNS:*.gateway-origin.svc.cluster.local' 'extendedKeyUsage=serverAuth' > "$origin_tls/extensions"
-  openssl x509 -req -in "$origin_tls/tls.csr" -CA "$origin_tls/ca.pem" -CAkey "$origin_tls/ca.key" \
+  openssl x509 -sha256 -req -in "$origin_tls/tls.csr" -CA "$origin_tls/ca.pem" -CAkey "$origin_tls/ca.key" \
     -CAcreateserial -CAserial "$origin_tls/ca.srl" -days 2 -extfile "$origin_tls/extensions" -out "$origin_tls/tls.crt" 2>/dev/null
 )
 k create secret tls origin-tls -n gateway-origin --cert="$origin_tls/tls.crt" --key="$origin_tls/tls.key" --dry-run=client -o yaml | k apply -f -

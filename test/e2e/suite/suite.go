@@ -77,7 +77,7 @@ func (s *scenario) command(args ...string) ([]byte, error) { return s.env.Kubect
 func (s *scenario) trust() error {
 	ca, err := s.command("exec", "-n", "gateway-test", "workload", "-c", "istio-proxy", "--", "cat", "/run/gateway/trust/inspection-ca.pem")
 	if err != nil {
-		return fmt.Errorf("public CA: %w", err)
+		return fmt.Errorf("public CA: %w: %s", err, ca)
 	}
 	b, _ := pem.Decode(ca)
 	if b == nil {

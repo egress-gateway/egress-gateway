@@ -24,7 +24,7 @@ func contentCases() map[string]contentCase {
 		"workload-deny":   {body: `{"action":"workload-deny"}`, scheme: "https", role: "workload", status: 403},
 		"egress-deny":     {body: `{"action":"egress-deny"}`, scheme: "https", role: "egress", status: 403},
 		"spoof":           {body: `{"action":"egress-deny"}`, scheme: "https", role: "egress", status: 403, headers: []string{"X-Workload-Allowed: true", "X-Workload-Identity: spiffe://cluster.local/ns/gateway-test/sa/egress", "X-Forwarded-Client-Cert: URI=spiffe://cluster.local/ns/gateway-test/sa/egress"}},
-		"invalid-json":    {body: `{`, scheme: "https", role: "workload", status: 403},
+		"invalid-json":    {body: `{`, scheme: "https", role: "workload", status: 400},
 		"missing-body":    {scheme: "https", role: "workload", status: 403},
 		"encoded":         {body: `{"action":"safe"}`, scheme: "https", role: "workload", status: 415, headers: []string{"Content-Encoding: gzip"}},
 		"oversized":       {body: `{"action":"safe","padding":"` + strings.Repeat("x", 65536) + `"}`, scheme: "https", role: "workload", status: 413},
