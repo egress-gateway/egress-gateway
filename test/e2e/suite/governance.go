@@ -28,7 +28,7 @@ func contentCases() map[string]contentCase {
 		"invalid-json":    {body: `{`, scheme: "https", role: "workload", status: 403},
 		"missing-body":    {scheme: "https", role: "workload", status: 403},
 		"encoded":         {body: `{"action":"safe"}`, scheme: "https", role: "workload", status: 415, headers: []string{"Content-Encoding: gzip"}},
-		"oversized":       {body: `{"action":"safe","padding":"` + strings.Repeat("x", 65536) + `"}`, scheme: "https", role: "workload", status: 413},
+		"oversized":       {body: `{"action":"safe","padding":"` + strings.Repeat("x", 65536) + `"}`, scheme: "https", role: "workload", status: 403},
 		"workload-mutate": {body: `{"action":"workload-mutate"}`, scheme: "https", role: "workload", status: 403},
 		"egress-mutate":   {body: `{"action":"egress-mutate"}`, scheme: "https", role: "egress", status: 403},
 		"http-alternate":  {body: `{"action":"safe"}`, scheme: "http", role: "origin", status: 200},

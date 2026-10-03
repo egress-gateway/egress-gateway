@@ -5,7 +5,7 @@ import rego.v1
 
 default permitted := false
 
-payload := json.unmarshal(base64.decode(input.attributes.request.http.raw_body))
+payload := json.unmarshal(base64.decode(input.attributes.request.http.rawBody))
 
 permitted if {
 	input.source_principal == "spiffe://cluster.local/ns/gateway-test/sa/workload"

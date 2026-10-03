@@ -157,7 +157,14 @@ func sharedRPCCases() map[string]meshRPC {
 	wire("encoding", good, "application/grpc", "gzip", false)
 	wire("malformed-protobuf", frame([]byte{10, 255}), "application/grpc", "", false)
 	wire("missing-frame", nil, "application/grpc", "", false)
-	wire("oversized", frame(append([]byte{10, 128, 128, 4}, []byte(strings.Repeat("x", 65536))...)), "application/grpc", "", false)
+	// An unknown field pads an otherwise allowed service value, isolating the
+	// complete-frame limit from payload rule values (65521 + 15 = 65536 bytes).
+	padded := func(n int) []byte {
+		prefix := binary.AppendUvarint([]byte{10, 4, 's', 'a', 'f', 'e', 18}, uint64(n))
+		return frame(append(prefix, []byte(strings.Repeat("x", n))...))
+	}
+	wire("body-limit", padded(65521), "application/grpc", "", true)
+	wire("oversized", padded(65522), "application/grpc", "", false)
 	c := cases["oversized"]
 	c.status = 413
 	cases["oversized"] = c

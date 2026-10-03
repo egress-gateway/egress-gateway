@@ -4,7 +4,15 @@ require kubectl jq
 verify_owner
 k get configmap coredns -n kube-system -o json > "$state_dir/coredns-host-aliases.json"
 # Setup-only, fixed fixture names. Never rewrite an external application's DNS.
-jq '.data.Corefile |= sub("    ready\n"; "    ready\n    rewrite name exact child.blocked-workload.gateway-origin.svc.cluster.local blocked-workload.gateway-origin.svc.cluster.local\n    rewrite name exact child.blocked-egress.gateway-origin.svc.cluster.local blocked-egress.gateway-origin.svc.cluster.local\n")' "$state_dir/coredns-host-aliases.json" > "$state_dir/coredns-host-aliases-applied.json"
+jq -e '
+  ["    rewrite name exact child.blocked-workload.gateway-origin.svc.cluster.local blocked-workload.gateway-origin.svc.cluster.local\n",
+   "    rewrite name exact child.blocked-egress.gateway-origin.svc.cluster.local blocked-egress.gateway-origin.svc.cluster.local\n"] as $rewrites
+  | reduce $rewrites[] as $rewrite (.;
+      if (.data.Corefile | contains($rewrite)) then .
+      elif (.data.Corefile | contains("    ready\n")) then
+        .data.Corefile |= sub("    ready\n"; "    ready\n" + $rewrite)
+      else error("Corefile ready anchor missing") end)
+' "$state_dir/coredns-host-aliases.json" > "$state_dir/coredns-host-aliases-applied.json"
 k apply -f "$state_dir/coredns-host-aliases-applied.json"
 k rollout restart deployment/coredns -n kube-system
 k rollout status deployment/coredns -n kube-system --timeout=120s

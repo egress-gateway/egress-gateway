@@ -3,6 +3,7 @@ Feature: Independent authorization in the deployed Istio request path
   The same HTTPS origin and path receive different decisions based on complete content.
   Every denial has a responsible proxy record and healthy upstream non-delivery evidence.
 
+  @shared-body
   Scenario Outline: Authorize or reject complete request content
     When the workload exercises the governed "<case>" request
 
@@ -18,5 +19,6 @@ Feature: Independent authorization in the deployed Istio request path
       | oversized       |
       | http-alternate  |
 
+  @shared-mutation
   Scenario: Authorization response mutation cannot change the forwarding target
     When the deployed mutation-only authorization fixture tries to change the target

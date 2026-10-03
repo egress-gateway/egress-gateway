@@ -63,6 +63,7 @@ Feature: Shared policy decisions govern the actual mesh path
       | encoding |
       | malformed-protobuf |
       | missing-frame |
+      | body-limit |
       | oversized |
 
   Scenario Outline: Unusable static dependencies stop startup
