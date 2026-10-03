@@ -25,6 +25,9 @@ workload:
       ports: [8080, 8443]
     - peer: {namespace: istio-system, podLabels: {app: istiod}}
       ports: [15012]
+    # Test-only native bundle delivery; publication is loopback-only on its Pod.
+    - peer: {namespace: gateway-test, podLabels: {app: policy-publisher}}
+      ports: [8085]
     - peer: {namespace: gateway-test, podLabels: {app: otel-collector}}
       ports: [4317, 4318]
     dns:
@@ -54,6 +57,9 @@ egress:
       ports: [8443]
     - peer: {namespace: istio-system, podLabels: {app: istiod}}
       ports: [15012]
+    # Test-only native bundle delivery; publication is loopback-only on its Pod.
+    - peer: {namespace: gateway-test, podLabels: {app: policy-publisher}}
+      ports: [8085]
     - peer: {namespace: gateway-test, podLabels: {app: otel-collector}}
       ports: [4317, 4318]
     dns:

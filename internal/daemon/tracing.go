@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -19,7 +20,7 @@ func prepareOPA(c config.Config) (string, error) {
 	}
 	raw, err := os.ReadFile(c.OPAConfig)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read OPA configuration: %w", err)
 	}
 	var native map[string]json.RawMessage
 	if err := yaml.Unmarshal(raw, &native); err != nil {

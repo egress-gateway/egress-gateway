@@ -47,7 +47,10 @@ var logger = log.New(os.Stdout, "", 0)
 func record(e event) { b, _ := json.Marshal(e); logger.Print(string(b)) }
 
 func main() {
-	mode := flag.String("mode", "send", "send or serve")
+	bundleDir := flag.String("bundle-dir", "/policies", "fixture bundle directory")
+	expectedStatus := flag.Int("expected-status", 200, "policy observation target status")
+	interval := flag.Duration("interval", 200*time.Millisecond, "policy observation probe interval")
+	mode := flag.String("mode", "send", "send, serve, policy-publisher or observe-policy")
 	protocol := flag.String("protocol", "tcp", "tcp, udp, dns, quic, mesh, grpc or grpc-wire")
 	target := flag.String("target", "", "receiver address")
 	id := flag.String("id", "", "request identifier")
@@ -65,7 +68,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	var err error
-	if *mode == "serve" {
+	if *mode == "policy-publisher" {
+		err = servePolicies(ctx, *bundleDir)
+	} else if *mode == "observe-policy" {
+		var result policyObservations
+		result, err = observePolicy(ctx, *target, *id, *ca, *payload, *expectedStatus, *interval, *timeout)
+		if encodeErr := json.NewEncoder(os.Stdout).Encode(result); err == nil {
+			err = encodeErr
+		}
+	} else if *mode == "serve" {
 		err = serve(ctx, *cert, *key)
 	} else if *mode == "send" {
 		if *protocol == "grpc" || *protocol == "grpc-wire" {

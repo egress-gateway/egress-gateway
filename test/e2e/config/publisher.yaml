@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: policy-publisher
+    namespace: gateway-test
+  spec:
+    replicas: 1
+    selector:
+      matchLabels: {app: policy-publisher}
+    template:
+      metadata:
+        labels: {app: policy-publisher}
+        annotations: {sidecar.istio.io/inject: "false"}
+      spec:
+        automountServiceAccountToken: false
+        containers:
+        - name: publisher
+          image: ${CURL_TEST_IMAGE}
+          imagePullPolicy: Never
+          command: [/usr/local/bin/gateway-e2e-probe, -mode, policy-publisher]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            tcpSocket: {port: 8085}
+          volumeMounts:
+          - {name: workload, mountPath: /policies/workload, readOnly: true}
+          - {name: egress, mountPath: /policies/egress, readOnly: true}
+        volumes:
+        - name: workload
+          configMap: {name: workload-shared}
+        - name: egress
+          configMap: {name: egress-shared}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: policy-publisher
+    namespace: gateway-test
+  spec:
+    selector: {app: policy-publisher}
+    ports: [{name: http-bundles, port: 8085, targetPort: 8085}]

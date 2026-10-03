@@ -16,7 +16,7 @@ import (
 // prepareEnvoy moves the standalone admin and named OPA cluster onto private
 // sockets. Envoy validates extension schemas; preserving unknown fields here
 // avoids turning the daemon into a second Envoy configuration authority.
-func prepareEnvoy(c config.Config) (string, error) {
+func prepareEnvoy(c config.Config, policyExtension bool) (string, error) {
 	raw, err := os.ReadFile(c.EnvoyConfig)
 	if err != nil {
 		return "", err
@@ -61,7 +61,7 @@ func prepareEnvoy(c config.Config) (string, error) {
 				httpFilters, _ := hcm["http_filters"].([]any)
 				for _, item := range httpFilters {
 					filter, _ := item.(map[string]any)
-					if c.WorkloadConfig != "" && filter["name"] == "envoy.filters.http.ext_authz" {
+					if policyExtension && filter["name"] == "envoy.filters.http.ext_authz" {
 						sharedAuthorization = true
 						cfg, ok := filter["typed_config"].(map[string]any)
 						if !ok || cfg == nil {
@@ -78,7 +78,7 @@ func prepareEnvoy(c config.Config) (string, error) {
 			}
 		}
 	}
-	if c.WorkloadConfig != "" && !sharedAuthorization {
+	if policyExtension && !sharedAuthorization {
 		return "", errors.New("shared workload requires an ext_authz HTTP filter")
 	}
 	clusters, _ := static["clusters"].([]any)

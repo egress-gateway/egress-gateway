@@ -71,6 +71,7 @@ Feature: Shared policy decisions govern the actual mesh path
     Examples:
       | case |
       | missing-bundle |
+      | unavailable-native-source |
       | invalid-bundle |
       | missing-descriptor |
       | wrong-digest |
@@ -79,3 +80,11 @@ Feature: Shared policy decisions govern the actual mesh path
 
   Scenario: Explicit empty policies keep the independent peer boundary
     When valid empty shared policies preserve independent admission
+
+  @shared-updates
+  Scenario Outline: Native updates change real decisions without runtime replacement
+    When native policy updates for "<role>" are measured without replacing the workload
+    Examples:
+      | role |
+      | workload |
+      | egress |

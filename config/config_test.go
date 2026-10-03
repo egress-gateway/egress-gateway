@@ -51,3 +51,10 @@ func TestRejectInvalidContract(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyPolicyConfigurationRequiresMigration(t *testing.T) {
+	_, err := config.Load(func(key string) (string, bool) { return "/old/runtime.json", key == "GATEWAY_WORKLOAD_CONFIG" })
+	if err == nil || !strings.Contains(err.Error(), "OPA_CONFIG") {
+		t.Fatalf("expected explicit native configuration migration: %v", err)
+	}
+}

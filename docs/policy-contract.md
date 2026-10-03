@@ -1,58 +1,78 @@
 # Shared workload policy integration
 
-Gateway consumes `egress-gateway-policy` at
-`v0.0.0-20261003102545-355f8aa1aa88`. Public `workload.Policy`, validation,
-normalized inputs/decisions, fixed Rego and `bundle.Build` belong to that library.
-The dependency direction is gateway → policy ← controller. No public rule types
-or baseline evaluator are duplicated here.
+Gateway consumes the immutable `egress-gateway-policy` module pinned in `go.mod`.
+Policy owns public rules, normalized inputs/decisions, fixed Rego, execution
+artifacts and its OPA extension. The dependency direction is gateway → policy ←
+controller. Gateway registers the extension and supplies host configuration;
+upstream OPA owns bundle transport, loading, compilation and activation.
 
-## Static configuration
+## Native OPA configuration
 
-A trusted consumer constructs and validates a `workload.Policy`, calls
-`bundle.Build`, and stages the resulting archive for each role. Set
-`GATEWAY_WORKLOAD_CONFIG` to an absolute JSON file path:
+A trusted consumer calls `bundle.BuildExecution(policy, revision)` and publishes
+the resulting standard snapshot. Point `OPA_CONFIG` at ordinary OPA configuration:
 
-```json
-{
-  "bundle": "/etc/gateway/policy/workload.tar.gz",
-  "descriptors": [{
-    "url": "https://artifacts.example/api.pb",
-    "digest": "sha256:<64 lowercase hex characters>",
-    "path": "/etc/gateway/policy/api.pb"
-  }],
-  "allowedPeers": ["spiffe://cluster.local/ns/application/sa/client"]
-}
+```yaml
+plugins:
+  egress_gateway_workload:
+    role: egress
+    allowedPeers: ["spiffe://cluster.local/ns/application/sa/client"]
+    descriptors:
+      - url: https://artifacts.example/api.pb
+        digest: sha256:<64 lowercase hex characters>
+        path: /etc/gateway/policy/api.pb
+services:
+  policies:
+    url: https://bundles.example
+bundles:
+  workload:
+    service: policies
+    resource: workload.tar.gz
+    polling:
+      min_delay_seconds: 10
+      max_delay_seconds: 20
+status:
+  console: true
 ```
 
-`descriptors` is omitted when no Protobuf decoder is required. Each entry binds
-exact staged bytes to the URL and digest in a public rule; the URL is an identity,
-not a download instruction. Egress requires a nonempty `allowedPeers` list of exact
-verified SPIFFE identities, independently of any baseline pass. Workload does not
-use that binding. Applications must not write these files or choose their paths.
+Use native `resource: file:///etc/gateway/policy/workload.tar.gz` without a service
+for a staged, one-time file load. HTTP pull is needed for the update scenarios.
+OPA owns source authentication, polling and error diagnostics.
 
-Startup validates the standard bundle root `egress_gateway/workload`, Rego v1,
-contract version `v1`, policy data, descriptor SHA-256, imports, selected service
-and methods. Invalid dependencies stop startup before forwarding becomes available.
-The already verified archive and fixed gateway adapter bundle are loaded through
-upstream OPA. Verified descriptors remain in memory. The request path does no
-artifact reads or downloads. Changes require process/Pod replacement; dynamic
-publication, binding and activation belong to the later controller milestone.
-Do not combine this static mode with independently updated OPA bundles. Do not
-combine it with `--policy`; that flag remains for explicit test fixtures.
+`descriptors` is omitted when no Protobuf dependency is needed. Policy verifies
+staged bytes, SHA-256, imports, selected services and methods. URLs identify
+artifacts; they are not descriptor download instructions. Descriptors remain
+immutable for that plugin configuration, so stage all required views before
+adopting a policy that uses them. Applications must not write configuration,
+bundles or descriptors. Egress requires exact verified SPIFFE `allowedPeers`,
+independently of a valid empty or permitting workload policy.
 
-## Authorization boundary
+Gateway derives the role from `GATEWAY_ROLE`, fixes the official Envoy plugin
+query to `egress_gateway/workload/authorization/allow`, and disables its body
+parser. Policy's registered extension and execution artifact perform inspection
+and strict decision adaptation in the same native OPA evaluation. Gateway does
+not read DSL fields, prepare descriptors, generate bridge Rego or fetch policies
+on requests. Undefined, erroneous or malformed decisions cannot authorize.
 
-The daemon fixes the official Envoy plugin query to `gateway/adapter/allow` and
-turns off its first-message/body parser. A private `gateway.inspect` built-in
-normalizes Envoy's trusted attributes and performs the required wire decoding.
-The fixed bridge evaluates `data.egress_gateway.workload.decision` with the public
-normalized input. `gateway.accepts` uses the library's strict decision decoder;
-undefined results, evaluation errors or malformed decisions cannot allow.
+Startup waits for the first usable bundle and extension dependencies before proxy
+startup. Native download/load/compile failures retain the last activated policy.
+The native status log records errors and the actual active revision. An activated
+bundle with incompatible inspection dependencies is not ready and cannot authorize
+uninspected traffic. A later compatible update recovers without a runtime restart.
+Readiness uses `/health?plugins&bundles`; liveness uses `/health` and the private
+authorization listener, allowing OPA's own update loop to recover.
 
-The valid empty baseline is supported. Missing data or dependencies are not an
-empty policy. Peer admission, target guards, mesh/origin TLS validation and network
-controls remain independent requirements. Both roles evaluate their own static
-baseline; application identity or prior-allow headers confer no permission.
+### Migration
+
+Remove `GATEWAY_WORKLOAD_CONFIG` and its old `runtime.json`; setting that variable
+now fails with a migration error. Move the staged descriptors and peer binding
+into Policy's plugin configuration under `OPA_CONFIG`. Publish `BuildExecution`
+artifacts; core-only `bundle.Build` artifacts are not ready extension artifacts.
+The public normalized-input library contract remains unchanged. `--policy` stays
+available for explicit test fixtures and cannot be combined with the extension.
+
+Both roles evaluate their own active bundle. Peer admission, target guards,
+mesh/origin TLS and network controls remain independent. No product publisher,
+Controller integration or fleet convergence guarantee is introduced here.
 
 ## Envoy consumer requirements
 
@@ -103,19 +123,31 @@ and protected by the trusted operator.
 
 ## Evidence boundaries
 
-Component tests exercise the public bundle through the official gRPC authorization
-service, all public selector/operator families, strict decisions, immutable startup
-snapshots, decoder failures and separate descriptor views. Image tests use real
-HTTP/HTTPS and gRPC, verified TLS, independent egress decisions and origin
-non-delivery. Existing fixture policies remain for mutation/fault injection and
-legacy regression. Shared-policy real-mesh acceptance is delivered by #13; image
-proof alone does not establish that result.
+Policy's component tests own normalized rule and decoder conformance. Gateway's
+component tests exercise registration, role/entrypoint configuration and native
+readiness/update/recovery through the official authorization service. Image tests
+exercise native HTTP pull, policy changes and failure recovery through real
+HTTP/HTTPS and unary gRPC traffic with verified TLS. Mesh tests additionally prove
+Istio identity, Pod confinement and attributable origin delivery/non-delivery.
 
-## Real mesh fixture
+## Real mesh fixture and update duration
 
-The Gateway-owned kind fixture stages real shared bundles and descriptors through
-its private trusted consumer. Both roles enforce them over real Istio mTLS;
-HTTP/2 is preserved through the inspection, mesh and verified origin TLS hops.
+The trusted test consumer builds the execution bundles and stages descriptors.
+A fixture-only publisher exposes read-only bundle URLs; its write listener is
+loopback-only and accessed using the test runner's authenticated `kubectl exec`.
+Both roles use native OPA polling at one second. The suite changes each role
+independently while keeping the other permissive, with three allow/deny cycles.
+
+The publisher records when the new bytes become available. An application-side
+probe records real response times and request IDs, at a 200 ms cadence plus
+request time. Publisher, OPA and probe share the kind node clock. Artifacts retain
+publication-to-observed-enforcement duration, native activation time separately,
+and the observation interval/uncertainty, along with revision and candidate
+identity. Polling, response time and probe launch delay are included in the
+primary measurement; no latency SLO is asserted. Pod UIDs, container IDs and
+restart counts must remain unchanged. Denials require responsible-proxy evidence
+and healthy-origin non-delivery; allows require actual protected-operation delivery.
+
 See the [fixture matrix](../test/e2e/README.md#shared-http-and-grpc-policy) for
-selection, invalid-input, startup-dependency, empty-policy and peer-admission
-proof. Explicit mutation fault cases temporarily select fixture-only rules.
+selector, invalid-input, dependency, empty-policy, peer-admission and update cases.
+Explicit mutation/fault policies remain separate from shared baseline proof.

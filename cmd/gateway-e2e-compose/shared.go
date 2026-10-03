@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	policybundle "github.com/egress-gateway/egress-gateway-policy/bundle"
+	"github.com/egress-gateway/egress-gateway-policy/extension"
 	"github.com/egress-gateway/egress-gateway-policy/workload"
 	"github.com/egress-gateway/egress-gateway/config"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -24,7 +25,7 @@ func sharedArtifacts(role config.Role) (core.ConfigMap, error) {
 	cm := core.ConfigMap{TypeMeta: meta.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"}, ObjectMeta: meta.ObjectMeta{Name: string(role) + "-shared", Namespace: "gateway-test"}, Data: map[string]string{}, BinaryData: map[string][]byte{}}
 	set := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(grpc_health_v1.File_grpc_health_v1_health_proto)}}
 	var refs []workload.ArtifactRef
-	cfg := config.PolicyRuntime{Bundle: sharedDirectory + "/workload.tar.gz"}
+	cfg := extension.Config{Role: string(role)}
 	for _, view := range []string{"service", "alias"} {
 		copy := proto.Clone(set).(*descriptorpb.FileDescriptorSet)
 		if view == "alias" {
@@ -41,22 +42,36 @@ func sharedArtifacts(role config.Role) (core.ConfigMap, error) {
 		name := view + ".pb"
 		ref := workload.ArtifactRef{URL: "https://fixture.example/" + name, Digest: fmt.Sprintf("sha256:%x", sha256.Sum256(raw))}
 		refs = append(refs, ref)
-		cfg.Descriptors = append(cfg.Descriptors, config.DescriptorFile{URL: ref.URL, Digest: ref.Digest, Path: sharedDirectory + "/" + name})
+		cfg.Descriptors = append(cfg.Descriptors, extension.DescriptorFile{URL: ref.URL, Digest: ref.Digest, Path: sharedDirectory + "/" + name})
 		cm.BinaryData[name] = raw
 	}
 	if role == config.Egress {
 		cfg.AllowedPeers = []string{"spiffe://cluster.local/ns/gateway-test/sa/workload"}
 	}
-	archive, err := policybundle.Build(sharedPolicy(role, refs))
+	policy := sharedPolicy(role, refs)
+	archive, err := policybundle.BuildExecution(policy, "fixture-"+string(role))
 	if err != nil {
 		return cm, err
 	}
 	cm.BinaryData["workload.tar.gz"] = archive
-	raw, err := json.Marshal(cfg)
+	raw, err := json.Marshal(map[string]any{
+		"plugins": map[string]any{
+			extension.PluginName:   cfg,
+			"envoy_ext_authz_grpc": map[string]any{"path": extension.DecisionPath, "skip-request-body-parse": true},
+		},
+		"services": map[string]any{"fixture": map[string]any{"url": "http://policy-publisher.gateway-test.svc:8085"}},
+		"bundles":  map[string]any{"workload": map[string]any{"service": "fixture", "resource": "bundles/" + string(role), "polling": map[string]any{"min_delay_seconds": 1, "max_delay_seconds": 1}}},
+		"status":   map[string]any{"console": true},
+	})
 	if err != nil {
 		return cm, err
 	}
-	cm.Data["runtime.json"] = string(raw)
+	cm.Data["opa.json"] = string(raw)
+	raw, err = json.Marshal(policy)
+	if err != nil {
+		return cm, err
+	}
+	cm.Data["policy.json"] = string(raw)
 	return cm, nil
 }
 
@@ -118,7 +133,7 @@ func attachShared(p *core.Pod, cm core.ConfigMap) {
 				continue
 			}
 			c.Args = nil
-			c.Env = append(c.Env, core.EnvVar{Name: config.EnvWorkloadConfig, Value: sharedDirectory + "/runtime.json"})
+			c.Env = append(c.Env, core.EnvVar{Name: config.EnvOPAConfig, Value: sharedDirectory + "/opa.json"})
 			c.VolumeMounts = append(c.VolumeMounts, core.VolumeMount{Name: "gateway-shared", MountPath: sharedDirectory, ReadOnly: true})
 		}
 	}

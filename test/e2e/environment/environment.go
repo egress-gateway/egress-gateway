@@ -3,6 +3,7 @@
 package environment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -145,8 +146,16 @@ func (e *Environment) Run(ctx context.Context, reuse bool, tests func() error) (
 	return tests()
 }
 func (e *Environment) Kubectl(ctx context.Context, args ...string) ([]byte, error) {
+	return e.KubectlInput(ctx, nil, args...)
+}
+
+// KubectlInput supplies binary fixture artifacts without placing them in argv.
+func (e *Environment) KubectlInput(ctx context.Context, input []byte, args ...string) ([]byte, error) {
 	base := []string{"--kubeconfig", e.Config.Kubeconfig, "--context", "kind-" + e.Config.Cluster, "--request-timeout=30s"}
 	cmd := exec.CommandContext(ctx, "kubectl", append(base, args...)...)
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	return cmd.CombinedOutput()
 }
 

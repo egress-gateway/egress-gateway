@@ -44,6 +44,9 @@ k apply -f "$config_dir/routes.yaml"
 k apply -f "$config_dir/https.yaml"
 k apply -f "$config_dir/authorization.yaml"
 k apply -f "$artifacts/rendered-fixtures.yaml"
+envsubst '${CURL_TEST_IMAGE}' < "$config_dir/publisher.yaml" > "$artifacts/rendered-publisher.yaml"
+k apply -f "$artifacts/rendered-publisher.yaml"
+k rollout status deployment/policy-publisher -n gateway-test --timeout=120s
 k get configmap workload-shared egress-shared -n gateway-test -o json | jq -S '[.items[] | {name:.metadata.name,data,binaryData}] | sort_by(.name)' > "$artifacts/shared-artifacts.json"
 k rollout status deployment/origin-https -n gateway-origin --timeout=180s
 k rollout status deployment/origin -n gateway-origin --timeout=180s
