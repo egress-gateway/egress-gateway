@@ -45,6 +45,7 @@ func prepareEnvoy(c config.Config) (string, error) {
 	admin["address"] = pipe(c.EnvoyAdminPath())
 	static, _ := b["static_resources"].(map[string]any)
 	listeners, _ := static["listeners"].([]any)
+	sharedAuthorization := false
 	for _, item := range listeners {
 		listener, _ := item.(map[string]any)
 		chains, _ := listener["filter_chains"].([]any)
@@ -61,6 +62,7 @@ func prepareEnvoy(c config.Config) (string, error) {
 				for _, item := range httpFilters {
 					filter, _ := item.(map[string]any)
 					if c.WorkloadConfig != "" && filter["name"] == "envoy.filters.http.ext_authz" {
+						sharedAuthorization = true
 						cfg, ok := filter["typed_config"].(map[string]any)
 						if !ok || cfg == nil {
 							return "", errors.New("shared ext_authz filter requires typed_config object")
@@ -75,6 +77,9 @@ func prepareEnvoy(c config.Config) (string, error) {
 				}
 			}
 		}
+	}
+	if c.WorkloadConfig != "" && !sharedAuthorization {
+		return "", errors.New("shared workload requires an ext_authz HTTP filter")
 	}
 	clusters, _ := static["clusters"].([]any)
 	for _, item := range clusters {

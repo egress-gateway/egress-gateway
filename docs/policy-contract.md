@@ -56,7 +56,8 @@ baseline; application identity or prior-allow headers confer no permission.
 
 ## Envoy consumer requirements
 
-Standalone preparation sets `encode_raw_headers: true` and complete raw request
+Shared standalone startup requires an ext_authz HTTP filter. Preparation forces
+`failure_mode_allow: false`, sets `encode_raw_headers: true` and complete raw request
 body buffering on each ext_authz filter. Istiod-owned filters must supply the same
 configuration: `with_request_body.max_request_bytes: 65536`,
 `allow_partial_message: false`, `pack_as_bytes: true`, `encode_raw_headers: true`.

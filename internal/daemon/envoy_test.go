@@ -52,6 +52,10 @@ static_resources:
 	if strings.Contains(string(raw), "127.0.0.1") {
 		t.Fatal("management remained on shared network")
 	}
+	c.WorkloadConfig = "/trusted/runtime.json"
+	if _, err = prepareEnvoy(c); err == nil || !strings.Contains(err.Error(), "ext_authz") {
+		t.Fatalf("shared policy without authorization filter: %v", err)
+	}
 	if err = os.WriteFile(c.EnvoyConfig, []byte("dynamic_resources: {}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
