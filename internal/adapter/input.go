@@ -153,7 +153,7 @@ func (a *Adapter) Normalize(req *auth.CheckRequest) (workload.Input, error) {
 					view.Value = value
 				}
 			} else {
-				view.Status, view.Value = a.decodeProto(in, http, headers, grpcType, d, body)
+				view.Status, view.Value = a.decodeProto(in, http, headers, contentType, d, body)
 			}
 		}
 		in.Payloads = append(in.Payloads, view)

@@ -12,11 +12,14 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-func (a *Adapter) decodeProto(in workload.Input, http *auth.AttributeContext_HttpRequest, headers map[string][]string, grpcType bool, decoder *workload.Decoder, body []byte) (workload.InspectionStatus, any) {
+func (a *Adapter) decodeProto(in workload.Input, http *auth.AttributeContext_HttpRequest, headers map[string][]string, contentType string, decoder *workload.Decoder, body []byte) (workload.InspectionStatus, any) {
 	if in.GRPC == nil {
 		return workload.Unavailable, nil
 	}
-	if !grpcType || http.Method != "POST" || (http.Protocol != "HTTP/2" && http.Protocol != "HTTP/2.0") {
+	if contentType != "application/grpc" && contentType != "application/grpc+proto" {
+		return workload.Unsupported, nil
+	}
+	if http.Method != "POST" || (http.Protocol != "HTTP/2" && http.Protocol != "HTTP/2.0") {
 		return workload.Invalid, nil
 	}
 	if values := headers["grpc-encoding"]; len(values) > 0 && (len(values) != 1 || !strings.EqualFold(values[0], "identity")) {

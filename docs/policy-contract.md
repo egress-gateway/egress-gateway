@@ -82,7 +82,9 @@ so unrelated and attribute-only rules do not acquire decoding prerequisites.
   syntax and unpaired UTF-16 surrogates rejected. Numbers retain their JSON type;
   missing, null, empty keys, arrays and RFC 6901 selection remain distinct.
   Inspection supports up to 256 nested containers.
-- Protobuf: one complete uncompressed unary gRPC message, including its five-byte
+- Protobuf: `application/grpc` or `application/grpc+proto` only; other codec
+  subtypes are recognized as gRPC but cannot satisfy Protobuf inspection. One
+  complete uncompressed unary message is accepted, including its five-byte
   envelope within the 64 KiB body limit. Truncation, extra frames/trailing bytes,
   compression and client/server/bidirectional streaming payloads are rejected.
   A framed zero-length message is valid and maps to an empty message when allowed

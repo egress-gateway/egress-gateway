@@ -138,3 +138,28 @@ func TestAllStreamingDirectionsAreUnsupported(t *testing.T) {
 		}
 	}
 }
+
+func TestProtobufContentSubtype(t *testing.T) {
+	for _, tc := range []struct {
+		contentType string
+		want        workload.InspectionStatus
+	}{
+		{"application/grpc", workload.Ready},
+		{"application/grpc+proto", workload.Ready},
+		{"application/grpc+proto; charset=utf-8", workload.Ready},
+		{"application/grpc+json", workload.Unsupported},
+		{"application/grpc+custom", workload.Unsupported},
+		{"application/json", workload.Unsupported},
+	} {
+		t.Run(tc.contentType, func(t *testing.T) {
+			a := protoAdapter(t, false)
+			in, err := a.Normalize(request("/test.Service/Call", framed([]byte{10, 1, 'x'}), &core.HeaderValue{Key: "content-type", Value: tc.contentType}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if in.Protocol != workload.GRPC || in.Payloads[0].Status != tc.want {
+				t.Fatalf("protocol=%s status=%s want=%s", in.Protocol, in.Payloads[0].Status, tc.want)
+			}
+		})
+	}
+}

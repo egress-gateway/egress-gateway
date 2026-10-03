@@ -207,7 +207,7 @@ func runSharedTraffic(t *testing.T, state, host, workloadID, egressID, originID 
 	for _, tc := range []struct {
 		name, contentType string
 		body              []byte
-	}{{"spoof-type", "application/json", frame}, {"short", "application/grpc", []byte{0, 0}}, {"extra", "application/grpc", append(append([]byte(nil), frame...), frame...)}, {"compressed", "application/grpc", compressed}} {
+	}{{"spoof-type", "application/json", frame}, {"unsupported-codec", "application/grpc+json", frame}, {"short", "application/grpc", []byte{0, 0}}, {"extra", "application/grpc", append(append([]byte(nil), frame...), frame...)}, {"compressed", "application/grpc", compressed}} {
 		t.Run("wire-"+tc.name, func(t *testing.T) {
 			id := "shared-wire-" + tc.name
 			req, err := http.NewRequestWithContext(t.Context(), "POST", "https://"+authority+"/grpc.health.v1.Health/Check", strings.NewReader(string(tc.body)))
