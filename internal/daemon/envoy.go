@@ -61,7 +61,11 @@ func prepareEnvoy(c config.Config) (string, error) {
 				for _, item := range httpFilters {
 					filter, _ := item.(map[string]any)
 					if c.WorkloadConfig != "" && filter["name"] == "envoy.filters.http.ext_authz" {
-						cfg, _ := filter["typed_config"].(map[string]any)
+						cfg, ok := filter["typed_config"].(map[string]any)
+						if !ok || cfg == nil {
+							return "", errors.New("shared ext_authz filter requires typed_config object")
+						}
+						cfg["failure_mode_allow"] = false
 						cfg["encode_raw_headers"] = true
 						cfg["with_request_body"] = map[string]any{"max_request_bytes": 65536, "allow_partial_message": false, "pack_as_bytes": true}
 					}
