@@ -47,6 +47,9 @@ func Run(ctx context.Context, c config.Config, policies []string) (err error) {
 	if err := inspection.WriteAtomic(c.RequestGuardPath(), []byte(request.Source(c.Role)), 0o600); err != nil {
 		return err
 	}
+	if err := inspection.WriteAtomic(filepath.Join(c.RuntimeDir, "http-guard.lua"), []byte(request.HTTPSource(c.Role)), 0o600); err != nil {
+		return err
+	}
 	var sdsDone <-chan error
 	if c.Role == config.Workload {
 		ca, err := inspection.Open(c.StateDir, c.PublicDir, time.Now())

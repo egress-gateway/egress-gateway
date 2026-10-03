@@ -63,6 +63,10 @@ func Run(ctx context.Context, e *environment.Environment, tags string) error {
 		sc.Step(`^the foundation and Istio CNI agents have restarted$`, func() error { return s.env.Operation(s.ctx, "foundation-restart") })
 		sc.Step(`^Gateway preparation preserves IPv6 closure and direct network confinement$`, s.foundation)
 		sc.Step(`^the image accepts the on-demand certificate configuration$`, s.capability)
+		sc.Step(`^the workload exercises the governed "([^"]*)" request$`, s.content)
+		sc.Step(`^restricted "([^"]*)" execution cannot reach forbidden protocol receivers$`, s.network)
+		sc.Step(`^the deployed "([^"]*)" failure remains closed and recovers governance$`, s.fault)
+		sc.Step(`^direct gateway entrypoints reject local bypass and unverified clients$`, s.directEntrypoints)
 	}}
 	if code := suite.Run(); code != 0 {
 		return fmt.Errorf("BDD assertions failed (exit %d)", code)

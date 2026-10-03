@@ -87,6 +87,9 @@ func TestBusinessBoundaryRejectsCollisions(t *testing.T) {
 		"private mount": func(p *core.Pod) {
 			p.Spec.Containers[0].VolumeMounts = []core.VolumeMount{{Name: "state", MountPath: "/stolen"}}
 		},
+		"policy mount": func(p *core.Pod) {
+			p.Spec.Containers[0].VolumeMounts = []core.VolumeMount{{Name: "gateway-policy", MountPath: "/policy"}}
+		},
 		"volume substitution": func(p *core.Pod) {
 			p.Spec.Volumes = []core.Volume{{Name: "state", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}}}
 		},
@@ -118,6 +121,36 @@ func TestBusinessBoundaryRejectsCollisions(t *testing.T) {
 			}
 			if !reflect.DeepEqual(before, p) {
 				t.Fatal("mutated rejected input")
+			}
+		})
+	}
+}
+
+func TestTrustedPolicyIsOnlyMountedByProxy(t *testing.T) {
+	for _, role := range []config.Role{config.Workload, config.Egress} {
+		t.Run(string(role), func(t *testing.T) {
+			p, o := inputs()
+			o.Role, o.PolicyConfigMap = role, "resolved-policy"
+			if role == config.Egress {
+				o.TrustMounts = nil
+			}
+			got, _, err := enrollment.ComposePod(p, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range append(slices.Clone(got.Spec.InitContainers), got.Spec.Containers...) {
+				mount := slices.IndexFunc(c.VolumeMounts, func(m core.VolumeMount) bool { return m.Name == "gateway-policy" })
+				if c.Name == "istio-proxy" {
+					if mount < 0 || !c.VolumeMounts[mount].ReadOnly || !slices.Equal(c.Args, []string{"--policy", "/etc/gateway/policy/policy.rego"}) {
+						t.Fatal("proxy does not load the trusted policy")
+					}
+				} else if mount >= 0 {
+					t.Fatalf("policy exposed to %s", c.Name)
+				}
+			}
+			index := slices.IndexFunc(got.Spec.Volumes, func(v core.Volume) bool { return v.Name == "gateway-policy" })
+			if index < 0 || got.Spec.Volumes[index].ConfigMap == nil || got.Spec.Volumes[index].ConfigMap.Name != o.PolicyConfigMap {
+				t.Fatal("policy source differs from the trusted caller's input")
 			}
 		})
 	}

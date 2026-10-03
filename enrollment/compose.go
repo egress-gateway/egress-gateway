@@ -30,9 +30,11 @@ type Options struct {
 	DiscoveryAddress string            `json:"discoveryAddress"`
 	ProxyConfig      string            `json:"proxyConfig"`
 	// ProxyEnv supplies trusted provider/telemetry inputs, never Gateway overrides.
-	ProxyEnv             []core.EnvVar      `json:"proxyEnv,omitempty"`
-	OriginTrustConfigMap string             `json:"originTrustConfigMap,omitempty"`
-	Network              networking.Network `json:"network"`
+	ProxyEnv             []core.EnvVar `json:"proxyEnv,omitempty"`
+	OriginTrustConfigMap string        `json:"originTrustConfigMap,omitempty"`
+	// PolicyConfigMap supplies policy.rego through the existing daemon --policy input.
+	PolicyConfigMap string             `json:"policyConfigMap,omitempty"`
+	Network         networking.Network `json:"network"`
 }
 
 //go:embed managed.json
@@ -88,6 +90,11 @@ func ComposePod(business *core.Pod, o Options) (*core.Pod, *networking.Policy, e
 			continue
 		}
 		if c.Name == "istio-proxy" {
+			if o.PolicyConfigMap != "" {
+				c.Args = []string{"--policy", "/etc/gateway/policy/policy.rego"}
+				c.VolumeMounts = append(c.VolumeMounts, core.VolumeMount{Name: "gateway-policy", MountPath: "/etc/gateway/policy", ReadOnly: true})
+				trusted.Volumes = append(trusted.Volumes, core.Volume{Name: "gateway-policy", VolumeSource: core.VolumeSource{ConfigMap: &core.ConfigMapVolumeSource{LocalObjectReference: core.LocalObjectReference{Name: o.PolicyConfigMap}}}})
+			}
 			c.Env = proxyEnv(o)
 			seen := map[string]bool{}
 			for _, e := range c.Env {
@@ -157,7 +164,7 @@ func protectBusiness(p *core.Pod, managed core.PodSpec) error {
 	if p.Spec.AutomountServiceAccountToken != nil && *p.Spec.AutomountServiceAccountToken {
 		return fmt.Errorf("business service account token automount prohibited")
 	}
-	reserved := map[string]bool{"origin-trust": true}
+	reserved := map[string]bool{"origin-trust": true, "gateway-policy": true}
 	names := map[string]bool{}
 	for _, v := range managed.Volumes {
 		reserved[v.Name] = true

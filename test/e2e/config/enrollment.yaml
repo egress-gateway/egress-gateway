@@ -1,6 +1,7 @@
 # Trusted static consumer inputs. All network exceptions apply to the whole Pod.
 workload:
   role: workload
+  policyConfigMap: workload-policy
   image: ${GATEWAY_TEST_IMAGE}
   imagePullPolicy: Never
   trustImage: ${CURL_TEST_IMAGE}
@@ -30,6 +31,7 @@ workload:
     - {namespace: kube-system, podLabels: {k8s-app: kube-dns}}
 egress:
   role: egress
+  policyConfigMap: egress-policy
   image: ${GATEWAY_TEST_IMAGE}
   imagePullPolicy: Never
   originTrustConfigMap: origin-trust

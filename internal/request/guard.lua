@@ -45,16 +45,14 @@ function envoy_on_request(handle)
     return
   end
   local tls = info:downstreamSslConnection()
-  -- This filter belongs to the dedicated HTTPS listeners on both roles.
-  local scheme = "https"
-  if not tls then reject(handle, "TLS required"); return end
+  if (scheme == "https" or role == "egress") and not tls then reject(handle, "TLS required"); return end
   if role == "egress" and not tls:peerCertificateValidated() then
     handle:respond({[":status"] = "403"}, "verified workload identity required")
     return
   end
   local name, port = target(headers:get(":authority"), scheme)
   if not name then reject(handle, "invalid target authority"); return end
-  if role == "workload" and tls and hostname(info:requestedServerName()) ~= name then
+  if role == "workload" and scheme == "https" and hostname(info:requestedServerName()) ~= name then
     reject(handle, "target authority conflicts with TLS server name")
     return
   end

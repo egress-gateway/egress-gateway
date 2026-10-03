@@ -23,5 +23,13 @@ func Filter(role config.Role) map[string]any {
 
 // Source is also consumed by Istiod-owned HTTPS listener configuration.
 func Source(role config.Role) string {
-	return "local role = " + strconv.Quote(string(role)) + "\n" + guard
+	return source(role, "https")
+}
+
+// HTTPSource preserves the same target and peer checks on an HTTP origin route.
+// Egress still requires the authenticated mesh TLS hop.
+func HTTPSource(role config.Role) string { return source(role, "http") }
+
+func source(role config.Role, scheme string) string {
+	return "local role = " + strconv.Quote(string(role)) + "\nlocal scheme = " + strconv.Quote(scheme) + "\n" + guard
 }

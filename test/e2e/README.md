@@ -1,7 +1,8 @@
-# Gateway foundation and connectivity BDD fixture
+# Gateway governance BDD fixture
 
 This suite covers transparent HTTP and HTTPS through both proxy roles, startup
-inspection trust, real Istiod identities and independently verified origin TLS.
+inspection trust, real Istiod identities, independently verified origin TLS, two-stage body
+authorization, protocol confinement and component failure recovery.
 The selector configuration probe is only a prerequisite; the HTTPS scenario must
 also complete its first request to a hostname chosen after proxy startup.
 
@@ -66,7 +67,9 @@ installs Istio CNI. Its foundation check runs after composition, agent restarts 
 retained reuse. The static Go consumer calls `enrollment.ComposePod` for both
 roles and applies generated NetworkPolicies before Pods. Root volume preparation
 and the explicitly authorized management initializer precede the restricted native
-sidecar; proxy readiness gates base-store copying and bundle preparation. The curl application sees only its final read-only trust bundle.
+sidecar; proxy readiness gates base-store copying and bundle preparation. The curl application sees its final read-only trust bundle and public receiver CA
+certificates. The test-only client image extends curl with a Go protocol probe;
+that binary and its QUIC dependency are absent from the Gateway runtime image.
 The egress deployment uses the same gateway image. A sidecar-free controlled origin
 receives HTTP or independently verified HTTPS after the two proxies.
 
@@ -75,9 +78,10 @@ this fixture logging choice is not an authorization or trusted-identity input.
 The workload has no inject-disabled annotation: the namespace disables automatic
 injection while the declared sidecar status lets Istio CNI capture its traffic.
 
-The connectivity fixture has no OPA authorization filter. This is mesh test
-configuration, not a product authorization bypass switch. Two-level HTTP/HTTPS body authorization and failure behavior
-remain in component/image smoke coverage. Each HTTP scenario requires correlated
+Both roles load test-only policies from trusted ConfigMaps. HTTP and HTTPS routes
+use complete-body ext_authz (64 KiB, no partial authorization, fail closed) between
+the target guard and its dispatch check. The gateway requires the verified workload
+SPIFFE principal. Application headers cannot supply that identity. Each HTTP scenario requires correlated
 request IDs at both Envoys and the origin, verified SPIFFE peer identities at both
 ends of the mTLS hop, and active public mesh certificate metadata. Certificates
 are obtained by the real pilot-agent from the dedicated Istiod; no static workload
@@ -87,9 +91,7 @@ The foundation scenarios observe the actual initializer, IPv6 state, captured
 traffic rules and source-endpoint Calico DROP counters against a healthy controlled
 origin. Direct probes from the resident proxy UID bypass transparent capture and
 prove Pod-wide policy independently of Envoy. Both normal and post-CNI-restart
-connectivity are checked. This does not certify the full startup/fault and protocol
-matrix, two-stage Kubernetes authorization, controller admission or production
-installation; those remain separate acceptance.
+connectivity are checked. Controller admission and production installation remain separate acceptance.
 
 `config/enrollment.yaml` declares exact Pod peers and ports: workload to egress
 8080/8443, both roles to Istiod 15012 and telemetry 4317/4318, and egress to fixture
@@ -136,3 +138,35 @@ configures ordinary listeners; the custom HTTPS listener explicitly selects the 
 environment variables point at a different receiver, so a misdirected or duplicate
 Envoy exporter is observable. Successful OTLP records are retained with the other
 public fixture artifacts. OPA authorization spans are verified by `make smoke`.
+
+## Body, bypass and fault scenarios
+
+The body matrix uses the same HTTPS authority and path with allow/deny JSON values.
+It checks independent workload and egress decisions, spoofed identity headers,
+malformed/missing/encoded/oversized bodies and authorization target mutation.
+An HTTP alternative must obey the same two-stage checks. Correlated role logs and
+origin receipt/non-receipt accompany each response; independent origin controls
+bracket attempts. No application proxy option or disabled TLS verification is used.
+
+The protocol matrix sends identifiable TCP (8081/8444), UDP (5353/7777), DNS (53 to
+an unapproved resolver) and actual QUIC (443) traffic from business execution,
+business init and a running application while its proxy is held absent. Independent
+controls reach the same receiver before and after every attempt. Source Pod UID,
+CRI sandbox and veth identify the observed counters. TCP requires executed capture
+and Envoy BlackHole rejection (or verified proxy absence); datagrams require actual
+sent bytes and a source-endpoint Calico DROP increase. Receiver logs must contain
+both controls and no restricted identifier. Timeout alone cannot pass a case.
+
+Direct business requests to gateway 8080/8443 must hit the workload's closed route.
+An independent client then reaches each gateway listener with a verified server
+chain/SPIFFE identity but no client identity; server TLS rejection counters prove
+that the endpoint itself rejects that caller. ConfigMap and mesh routes are applied
+before Pods, with REGISTRY_ONLY workload routing and no raw gateway-port listener.
+
+Fault cases stop embedded OPA separately at each role while Envoy remains running,
+remove all gateway replicas, and fail a case-specific workload's required policy
+startup. Each has observed failure state, healthy receiver controls, fail-closed
+or prevented business execution, and allow/deny recovery checks. Fixtures use process
+signals or Kubernetes lifecycle actions, with restoration traps; the product has
+no fault-control API. Proxy-absence recovery also requires an observed restart and
+readiness. Retained `test` runs recreate case-specific Pods and restore shared ones.

@@ -144,6 +144,29 @@ items:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                     default_source_code:
                       filename: "/run/gateway/private/https-guard.lua"
+                - name: envoy.filters.http.ext_authz
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                    transport_api_version: V3
+                    failure_mode_allow: false
+                    include_tls_session: true
+                    with_request_body:
+                      max_request_bytes: 65536
+                      allow_partial_message: false
+                      pack_as_bytes: false
+                    grpc_service:
+                      envoy_grpc:
+                        cluster_name: opa
+                      timeout: 1s
+                    validate_mutations: true
+                    decoder_header_mutation_rules:
+                      disallow_all: true
+                      disallow_is_error: true
+                - name: gateway.dispatch
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                    default_source_code:
+                      filename: "/run/gateway/private/https-guard.lua"
                 - name: istio.metadata_exchange
                   typed_config:
                     "@type": type.googleapis.com/io.istio.http.peer_metadata.Config
@@ -248,6 +271,55 @@ items:
         operation: INSERT_BEFORE
         value:
           name: gateway.request
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              filename: "/run/gateway/private/https-guard.lua"
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8443
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.ext_authz
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+            transport_api_version: V3
+            failure_mode_allow: false
+            include_tls_session: true
+            with_request_body:
+              max_request_bytes: 65536
+              allow_partial_message: false
+              pack_as_bytes: false
+            grpc_service:
+              envoy_grpc:
+                cluster_name: opa
+              timeout: 1s
+            validate_mutations: true
+            decoder_header_mutation_rules:
+              disallow_all: true
+              disallow_is_error: true
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8443
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: gateway.dispatch
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             default_source_code:

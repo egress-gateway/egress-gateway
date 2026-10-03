@@ -35,3 +35,10 @@ buffering. These test-only policies do not define shared policy semantics. No
 application-supplied identity is promoted into a verified principal. The HTTPS fixture verifies the official plugin
 principal against a validated mesh-style peer certificate. Only the separate
 kind suite establishes real Istiod credentials and transparent CNI capture.
+
+The kind consumer applies its test-only OPA policies and guarded HTTP/HTTPS routes
+before starting enrolled Pods. The same private target guard supports HTTP origin
+routes while retaining mandatory mesh TLS and verified peer identity at egress.
+Workload raw routes to the allowed gateway ports are removed; those listeners also
+require client identity. Networking policy remains Pod-wide, and protocol/fault
+evidence is collected separately from content authorization.
