@@ -23,9 +23,9 @@ isolation uses the one-time Pod UID rules described in
 
 | Owner | Responsibility |
 |---|---|
-| gateway | Public runtime config, daemon/image, inspection trust, data-plane adapters, component and minimal connectivity tests |
+| gateway | Public runtime config, trusted Pod composition, Istio integration, private runtime resources, daemon/image and consumer acceptance |
 | policy | Future shared policy semantics and baseline fixtures |
-| networking | Shared installation, workload enrollment and network mechanics |
+| networking | Calico installation, policy expansion, platform permission validation and pre-business IPv6 disablement |
 | controller | CRDs, binding, admission, publication and desired-state status |
 | Istio | Mesh discovery, workload identity, mTLS and Envoy ownership under pilot-agent |
 | workload manager | Pod creation and its volume lifetime |

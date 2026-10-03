@@ -18,3 +18,4 @@ helm upgrade --install istiod "$charts/istio-control/istio-discovery" --namespac
 helm upgrade --install istio-cni "$charts/istio-cni" --namespace istio-system --kubeconfig "$kubeconfig" --kube-context "kind-$cluster" -f "$config_dir/cni-values.yaml" --wait --timeout 5m
 k rollout status deployment/istiod -n istio-system --timeout=180s
 k rollout status daemonset/istio-cni-node -n istio-system --timeout=180s
+"$BASH" "$root/test/e2e/scripts/foundation-check.sh" --root "$root" --cluster "$cluster" --kubeconfig "$kubeconfig" --image "$image" --config-dir "$config_dir" --artifacts "$artifacts" --state-dir "$state_dir"

@@ -1,0 +1,287 @@
+{
+  "initContainers": [
+    {
+      "command": [
+        "/bin/bash",
+        "-ec",
+        "chown 1337:1337 /state /runtime /public /bundle /istio /workload-socket /credential-socket /workload-certs; chmod 0700 /state /runtime /workload-socket /credential-socket /workload-certs; chmod 0755 /public /bundle /istio"
+      ],
+      "image": "",
+      "name": "prepare-volumes",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "add": [
+            "CHOWN",
+            "FOWNER",
+            "DAC_OVERRIDE"
+          ],
+          "drop": [
+            "ALL"
+          ]
+        },
+        "runAsGroup": 0,
+        "runAsUser": 0,
+        "runAsNonRoot": false
+      },
+      "volumeMounts": [
+        {
+          "mountPath": "/state",
+          "name": "state"
+        },
+        {
+          "mountPath": "/runtime",
+          "name": "runtime"
+        },
+        {
+          "mountPath": "/public",
+          "name": "public"
+        },
+        {
+          "mountPath": "/bundle",
+          "name": "bundle"
+        },
+        {
+          "mountPath": "/istio",
+          "name": "istio-data"
+        },
+        {
+          "mountPath": "/workload-socket",
+          "name": "workload-socket"
+        },
+        {
+          "mountPath": "/credential-socket",
+          "name": "credential-socket"
+        },
+        {
+          "mountPath": "/workload-certs",
+          "name": "workload-certs"
+        }
+      ]
+    },
+    {
+      "command": [
+        "/usr/local/bin/gateway-management-init"
+      ],
+      "image": "",
+      "name": "management-init",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "add": [
+            "NET_ADMIN",
+            "NET_RAW"
+          ],
+          "drop": [
+            "ALL"
+          ]
+        },
+        "runAsGroup": 0,
+        "runAsUser": 0,
+        "runAsNonRoot": false
+      }
+    },
+    {
+      "image": "",
+      "name": "istio-proxy",
+      "readinessProbe": {
+        "exec": {
+          "command": [
+            "/usr/local/bin/gateway-daemon",
+            "ready"
+          ]
+        },
+        "periodSeconds": 2,
+        "timeoutSeconds": 4
+      },
+      "resources": {
+        "limits": {
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "restartPolicy": "Always",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "drop": [
+            "ALL"
+          ]
+        },
+        "runAsGroup": 1337,
+        "runAsUser": 1337,
+        "runAsNonRoot": true
+      },
+      "startupProbe": {
+        "exec": {
+          "command": [
+            "/usr/local/bin/gateway-daemon",
+            "ready"
+          ]
+        },
+        "failureThreshold": 60,
+        "periodSeconds": 2,
+        "timeoutSeconds": 4
+      },
+      "volumeMounts": [
+        {
+          "mountPath": "/var/lib/gateway/private",
+          "name": "state"
+        },
+        {
+          "mountPath": "/run/gateway/private",
+          "name": "runtime"
+        },
+        {
+          "mountPath": "/run/gateway/trust",
+          "name": "public"
+        },
+        {
+          "mountPath": "/etc/istio/proxy",
+          "name": "istio-data"
+        },
+        {
+          "mountPath": "/var/run/secrets/workload-spiffe-uds",
+          "name": "workload-socket"
+        },
+        {
+          "mountPath": "/var/run/secrets/credential-uds",
+          "name": "credential-socket"
+        },
+        {
+          "mountPath": "/var/run/secrets/workload-spiffe-credentials",
+          "name": "workload-certs"
+        },
+        {
+          "mountPath": "/var/run/secrets/tokens",
+          "name": "istio-token",
+          "readOnly": true
+        },
+        {
+          "mountPath": "/var/run/secrets/istio",
+          "name": "istio-ca",
+          "readOnly": true
+        }
+      ]
+    },
+    {
+      "command": [
+        "/bin/cp",
+        "/cacert.pem",
+        "/bundle/base.pem"
+      ],
+      "image": "",
+      "name": "base-trust",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "drop": [
+            "ALL"
+          ]
+        },
+        "runAsGroup": 1337,
+        "runAsUser": 1337,
+        "runAsNonRoot": true
+      },
+      "volumeMounts": [
+        {
+          "mountPath": "/bundle",
+          "name": "bundle"
+        }
+      ]
+    },
+    {
+      "command": [
+        "/usr/local/bin/gateway-daemon",
+        "trust-init",
+        "--base",
+        "/bundle/base.pem",
+        "--ca",
+        "/public/inspection-ca.pem",
+        "--output",
+        "/bundle/ca-bundle.pem"
+      ],
+      "image": "",
+      "name": "trust-init",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "drop": [
+            "ALL"
+          ]
+        },
+        "runAsGroup": 1337,
+        "runAsUser": 1337,
+        "runAsNonRoot": true
+      },
+      "volumeMounts": [
+        {
+          "mountPath": "/bundle",
+          "name": "bundle"
+        },
+        {
+          "mountPath": "/public",
+          "name": "public",
+          "readOnly": true
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "emptyDir": {},
+      "name": "state"
+    },
+    {
+      "emptyDir": {},
+      "name": "runtime"
+    },
+    {
+      "emptyDir": {},
+      "name": "public"
+    },
+    {
+      "emptyDir": {},
+      "name": "bundle"
+    },
+    {
+      "emptyDir": {},
+      "name": "istio-data"
+    },
+    {
+      "emptyDir": {},
+      "name": "workload-socket"
+    },
+    {
+      "emptyDir": {},
+      "name": "credential-socket"
+    },
+    {
+      "emptyDir": {},
+      "name": "workload-certs"
+    },
+    {
+      "configMap": {
+        "name": "istio-ca-root-cert"
+      },
+      "name": "istio-ca"
+    },
+    {
+      "name": "istio-token",
+      "projected": {
+        "sources": [
+          {
+            "serviceAccountToken": {
+              "audience": "istio-ca",
+              "expirationSeconds": 43200,
+              "path": "istio-token"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
