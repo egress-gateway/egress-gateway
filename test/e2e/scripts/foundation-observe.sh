@@ -41,6 +41,6 @@ else
 fi
 snapshot > "$out/drop-after.txt"
 control after > "$out/receiver-after.txt"
-[[ "$(k -n gateway-origin get pod -l app=origin -o jsonpath='{.items[0].metadata.uid}')" == "$receiver_uid" ]] || { echo 'receiver changed' >&2; exit 2; }
+[[ "$(k -n gateway-origin get pod -l app=origin -o json | jq -er '.items | if length==1 then .[0].metadata.uid else error("ambiguous receiver") end')" == "$receiver_uid" ]] || { echo 'receiver changed' >&2; exit 2; }
 k -n gateway-origin logs deployment/origin > "$out/receiver.log"
 jq -n --arg id "$id" --arg ip "$ip" --arg uid "$uid" --arg receiverUID "$receiver_uid" --arg interface "$interface" --argjson senderExit "$sender_rc" '{id:$id,ip:$ip,uid:$uid,receiverUID:$receiverUID,interface:$interface,senderExit:$senderExit}' > "$out/result.json"
