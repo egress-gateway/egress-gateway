@@ -18,7 +18,8 @@ jq '{uid:.metadata.uid,init:.status.initContainerStatuses,containers:.status.con
 k -n gateway-test logs workload -c business-network-state > "$out/init-ipv6.txt"
 k -n gateway-test exec workload -c curl -- sh -ec 'for name in all default lo eth0; do printf "%s=" "$name"; cat "/proc/sys/net/ipv6/conf/$name/disable_ipv6"; done; id; cat /proc/self/status' > "$out/business-state.txt"
 k -n gateway-test exec workload -c istio-proxy -- sh -ec 'for name in all default lo eth0; do printf "%s=" "$name"; cat "/proc/sys/net/ipv6/conf/$name/disable_ipv6"; done; id; cat /proc/self/status' > "$out/resident-state.txt"
-interface="$(k -n gateway-test get workloadendpoints.crd.projectcalico.org -o json | jq -er '[.items[] | select(.spec.pod=="workload") | .spec.interfaceName] | if length==1 then .[0] else error("ambiguous endpoint") end')"
+peer_index="$(docker exec "$cluster-control-plane" nsenter -t "$pid" -n ip -j link show dev eth0 | jq -er '.[0].link_index')"
+interface="$(docker exec "$cluster-control-plane" ip -j link show | jq -er --argjson index "$peer_index" '[.[] | select(.ifindex==$index) | .ifname] | if length==1 then .[0] else error("ambiguous endpoint") end')"
 [[ "$interface" =~ ^cali[a-zA-Z0-9]+$ ]] || exit 2
 origin="$(k -n gateway-origin get pod -l app=origin -o json | jq -er '.items | if length==1 then .[0] else error("ambiguous receiver") end')"
 ip="$(jq -r .status.podIP <<< "$origin")"
